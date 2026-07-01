@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slay Your Own Exam — practice from your own PDFs</title>
+<meta name="description" content="Turn your own question-bank PDF into a realistic, UWorld-style board exam — verbatim questions, a 90-second timer, highlighting, full lab values, and AI tutoring on what you missed.">
+<meta name="theme-color" content="#4f46e5">
+<meta property="og:title" content="Slay Your Own Exam">
+<meta property="og:description" content="Practice USMLE/NBME-style blocks from your own PDFs, then get tutored on exactly what you missed.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236d5cf0'/%3E%3Cstop offset='1' stop-color='%237c3aed'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 33l9 9 19-21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#1c2733; --muted:#5b6b7b; --line:#dde3ea;
+  --accent:#1b6ec2; --accent-d:#155a9c; --good:#1f9d57; --bad:#d23b3b;
+  --flag:#e8a33d; --mark:#fff3a0; --soft:#f4f7fa; --shadow:0 1px 2px rgba(20,40,60,.06),0 2px 8px rgba(20,40,60,.05);
+  --radius:10px; --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+}
+[data-theme="mint"]{
+  --bg:#eaf5f0; --panel:#ffffff; --ink:#15302a; --muted:#5a7269; --line:#d2e7de;
+  --accent:#0f9d82; --accent-d:#0b806a; --good:#0b806a; --soft:#eef8f4; --mark:#fdf3a6;
+}
+[data-theme="green"]{
+  --bg:#edf5ec; --panel:#ffffff; --ink:#1b2e1b; --muted:#5c6f59; --line:#d5e6d1;
+  --accent:#2f9e44; --accent-d:#23832f; --good:#23832f; --soft:#f0f7ee; --mark:#fdf3a6;
+}
+[data-theme="ocean"]{
+  --bg:#e9f1fb; --panel:#ffffff; --ink:#15273a; --muted:#53667c; --line:#d1e0f0;
+  --accent:#0c83d9; --accent-d:#0a68ad; --soft:#eef5fd; --mark:#fdf3a6;
+}
+[data-theme="dark"]{
+  --bg:#0f1620; --panel:#172230; --ink:#e7edf3; --muted:#9fb0bf; --line:#2a3a4c;
+  --accent:#4d9be6; --accent-d:#3a82c9; --soft:#1c2a3a; --mark:#7a6a1f; --shadow:0 1px 3px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button{font-family:inherit;cursor:pointer}
+.hidden{display:none !important}
+.app{max-width:1180px;margin:0 auto;padding:0 14px}
+
+/* ---------- top app bar ---------- */
+.appbar{display:flex;align-items:center;gap:12px;height:52px;border-bottom:1px solid var(--line);
+  background:var(--panel);position:sticky;top:0;z-index:50;padding:0 14px}
+.brand{font-weight:700;letter-spacing:.2px}
+.brand small{color:var(--muted);font-weight:500;margin-left:6px}
+.spacer{flex:1}
+.iconbtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;
+  padding:6px 10px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.iconbtn:hover{background:var(--soft)}
+
+/* ---------- generic ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.pad{padding:18px}
+.h1{font-size:22px;font-weight:700;margin:18px 0 4px}
+.sub{color:var(--muted);margin:0 0 16px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:14px;font-weight:600}
+.btn:hover{background:var(--accent-d)}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.btn.ghost:hover{background:var(--soft)}
+.btn.sm{padding:6px 12px;font-size:13px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+label.fld{display:block;font-size:13px;color:var(--muted);margin:0 0 4px;font-weight:600}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  color:var(--ink);font-family:inherit;font-size:14px}
+textarea{resize:vertical}
+.note{font-size:12.5px;color:var(--muted)}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;background:var(--soft);border:1px solid var(--line)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.divider{height:1px;background:var(--line);margin:16px 0}
+a{color:var(--accent)}
+
+/* ---------- setup ---------- */
+.drop{border:2px dashed var(--line);border-radius:10px;padding:30px;text-align:center;background:var(--soft)}
+.drop.drag{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--soft))}
+.status{font-size:13px;color:var(--muted);margin-top:10px;white-space:pre-wrap}
+
+/* ---------- review table ---------- */
+.qrev{border:1px solid var(--line);border-radius:8px;margin:10px 0;background:var(--panel)}
+.qrev .top{display:flex;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--soft);border-radius:8px 8px 0 0}
+.qrev .top b{font-size:13px}
+.qrev textarea{border:none;border-radius:0;font-size:13.5px}
+.qrev .opts{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.optrow{display:flex;gap:8px;align-items:flex-start}
+.optrow .lt{font-weight:700;width:20px;text-align:center;padding-top:8px}
+.optrow input[type=text]{font-size:13.5px}
+.optrow input[type=radio]{margin-top:11px}
+
+/* ---------- exam ---------- */
+.exwrap{display:flex;flex-direction:column;height:calc(100vh - 52px)}
+.extop{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.extop .qno{font-weight:700}
+.timer{font-family:var(--mono);font-weight:700;font-size:16px;padding:4px 10px;border-radius:6px;background:var(--soft);border:1px solid var(--line);min-width:78px;text-align:center}
+.timer.warn{color:var(--bad);border-color:var(--bad)}
+.timer.paused{color:var(--flag);border-color:var(--flag)}
+.tool{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 9px;font-size:12.5px;display:inline-flex;gap:5px;align-items:center}
+.tool:hover{background:var(--soft)}
+.tool.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tool.flag.on{background:var(--flag);border-color:var(--flag);color:#3a2a00}
+.exbody{flex:1;overflow:auto;padding:18px 0}
+.stemwrap{max-width:880px;margin:0 auto;padding:0 16px}
+.stem{font-size:16.5px;line-height:1.72;user-select:text;color:var(--ink)}
+.stem p{margin:0 0 13px}
+.stem p:last-child{margin-bottom:0}
+.stem .hl{background:var(--mark);border-radius:2px;padding:0 1px;box-decoration-break:clone}
+.stem .st{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--bad);opacity:.7}
+.labwrap{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:8px;padding:10px 16px;margin:4px 0 15px;display:inline-block;min-width:min(340px,100%);max-width:100%;overflow-x:auto}
+.labtable{border-collapse:collapse;font-size:14.5px;width:100%}
+.labtable td{padding:4px 22px 4px 0;vertical-align:baseline;white-space:nowrap}
+.labtable td:last-child{padding-right:0}
+.labtable td.lk{color:var(--muted)}
+.labtable td.lv{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:left}
+.labtable td.lh{font-weight:700;color:var(--ink);padding-top:9px}
+.labtable tr.subgroup td.lk{padding-left:16px}
+.leadin{font-weight:600;margin-top:14px}
+.opts{max-width:880px;margin:16px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel)}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--panel))}
+.opt.elim .otext{text-decoration:line-through;opacity:.5}
+.opt.correct{border-color:var(--good);background:color-mix(in srgb,var(--good) 10%,var(--panel))}
+.opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,var(--panel))}
+.opt .lt{font-weight:700;width:22px;text-align:center}
+.opt .otext{flex:1}
+.opt .elimbtn{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:5px;width:24px;height:24px;line-height:1;font-size:13px}
+.opt .elimbtn:hover{color:var(--bad);border-color:var(--bad)}
+.opt .stat{font-family:var(--mono);font-size:12px;color:var(--muted);align-self:center}
+.exbottom{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-top:1px solid var(--line)}
+.navmini{display:flex;gap:4px;flex-wrap:wrap;max-width:520px;overflow:auto;max-height:40px}
+.nb{width:26px;height:26px;border-radius:5px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--ink)}
+.nb.cur{outline:2px solid var(--accent)}
+.nb.ans{background:var(--accent);color:#fff;border-color:var(--accent)}
+.nb.flag{background:var(--flag);color:#3a2a00;border-color:var(--flag)}
+
+/* feedback (tutor) */
+.fb{max-width:880px;margin:16px auto 0;padding:0 16px}
+.fb .box{border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--soft)}
+.fb .verdict{font-weight:700;margin-bottom:6px}
+.fb .verdict.good{color:var(--good)} .fb .verdict.bad{color:var(--bad)}
+.fb .expl{white-space:pre-wrap}
+
+/* ---------- results ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.kpi b{font-size:26px;display:block}
+.kpi span{color:var(--muted);font-size:13px}
+.bar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.bar > i{display:block;height:100%;background:var(--accent)}
+table.rev{width:100%;border-collapse:collapse;font-size:13.5px}
+table.rev th,table.rev td{border-bottom:1px solid var(--line);padding:8px 8px;text-align:left;vertical-align:top}
+table.rev th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:12px}
+.tag.ok{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.tag.no{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.tag.om{background:var(--soft);color:var(--muted)}
+
+/* analysis markdown */
+.md{font-size:15px;line-height:1.65}
+.md h1,.md h2,.md h3{line-height:1.3;margin:18px 0 8px}
+.md h1{font-size:20px} .md h2{font-size:17px} .md h3{font-size:15px;color:var(--accent)}
+.md ul,.md ol{padding-left:22px;margin:8px 0}
+.md li{margin:3px 0}
+.md code{font-family:var(--mono);background:var(--soft);padding:1px 5px;border-radius:4px;font-size:13px}
+.md strong{font-weight:700}
+.md p{margin:8px 0}
+.md hr{border:none;border-top:1px solid var(--line);margin:14px 0}
+
+/* modal */
+.modalbg{position:fixed;inset:0;background:rgba(10,20,30,.45);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:520px;width:92%;max-height:80vh;overflow:auto}
+.modal .mh{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700}
+.modal .mb{padding:16px}
+.labtbl{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px}
+.labtbl td{border-bottom:1px solid var(--line);padding:5px 6px;vertical-align:top}
+.labtbl td:first-child{color:var(--muted);white-space:pre}
+.labtbl td:last-child{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.labsec{font-weight:700;color:var(--accent);margin:14px 0 4px;font-size:13px;position:sticky;top:0;background:var(--panel);padding:2px 0}
+#labSearch{position:sticky;top:0;z-index:2}
+.calc input{font-size:18px;text-align:right;font-family:var(--mono)}
+.calcgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.calcgrid button{padding:12px;border:1px solid var(--line);background:var(--soft);border-radius:6px;font-size:15px}
+.calcgrid button:hover{background:var(--panel)}
+
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:8px;font-size:13.5px;z-index:200;opacity:0;transition:opacity .2s}
+.toast.show{opacity:1}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.qimg{max-width:100%;border:1px solid var(--line);border-radius:6px;display:block;margin:12px auto 0}
+.stemimgs{max-width:880px;margin:14px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:10px}
+.revimgs{padding:8px 10px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line)}
+.revimg{position:relative}
+.revimg img{height:88px;border:1px solid var(--line);border-radius:6px;display:block}
+.revimg .x{position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:var(--bad);color:#fff;font-size:12px;line-height:1}
+.rangebox{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.rangebox .f{max-width:150px}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}.navmini{max-width:200px}}
+/* ====================== Slay Your Own Exam — brand polish ====================== */
+:root{
+  --bg:#f5f6fb; --panel:#ffffff; --ink:#171c2b; --muted:#5e6b86; --line:#e7e9f2;
+  --accent:#5b54e6; --accent-d:#4a43d6; --accent-2:#8b5cf6; --good:#15a36a; --bad:#e0474c;
+  --flag:#e8a33d; --mark:#fff2a0; --soft:#f3f3fc;
+  --shadow:0 1px 2px rgba(28,30,60,.05), 0 6px 22px rgba(28,30,60,.06);
+  --radius:14px;
+  --grad:linear-gradient(135deg,#6d5cf0 0%,#8b5cf6 100%);
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --display:'Plus Jakarta Sans','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+body{font-family:var(--sans);background:
+  radial-gradient(1200px 480px at 100% -200px, rgba(124,92,246,.10), transparent 60%),
+  radial-gradient(1000px 420px at -10% -160px, rgba(91,84,230,.10), transparent 55%),
+  var(--bg);background-attachment:fixed}
+[data-theme="dark"] body{background:var(--bg)}
+h1,h2,h3,.h1,.brand,.hero-title,.sectit{font-family:var(--display);letter-spacing:-.01em}
+
+/* nav */
+.appbar{height:60px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.82);backdrop-filter:saturate(1.4) blur(10px)}
+[data-theme="dark"] .appbar{background:rgba(23,34,48,.82)}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:800;font-size:18px}
+.brand small{display:none}
+.logo{width:30px;height:30px;border-radius:9px;background:var(--grad);display:grid;place-items:center;box-shadow:0 4px 12px rgba(124,92,246,.45);flex:none}
+.logo svg{width:18px;height:18px}
+.brand .sub2{font-family:var(--sans);font-weight:500;font-size:11.5px;color:var(--muted);margin-left:2px;border-left:1px solid var(--line);padding-left:11px}
+@media(max-width:560px){.brand .sub2{display:none}}
+.iconbtn{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:7px 13px;font-weight:500;transition:.15s}
+.iconbtn:hover{background:var(--soft);border-color:#d8dbe9;transform:translateY(-1px)}
+
+/* buttons */
+.btn{background:var(--grad);border-radius:10px;padding:11px 18px;font-weight:600;box-shadow:0 4px 14px rgba(91,84,230,.28);transition:transform .14s, box-shadow .14s, filter .14s}
+.btn:hover{background:var(--grad);filter:brightness(1.04);transform:translateY(-1px);box-shadow:0 7px 20px rgba(91,84,230,.34)}
+.btn:active{transform:translateY(0)}
+.btn.sm{padding:7px 13px;border-radius:9px;box-shadow:none}
+.btn.ghost{background:transparent;color:var(--accent);border:1.5px solid #d9d7f7;box-shadow:none}
+.btn.ghost:hover{background:var(--soft);filter:none;border-color:var(--accent)}
+
+/* cards */
+.card{border-radius:var(--radius);border-color:var(--line)}
+.pad{padding:22px}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-radius:22px;margin:22px 0 8px;padding:40px 34px;color:#fff;
+  background:linear-gradient(135deg,#5b54e6 0%,#7c3aed 55%,#9333ea 100%);
+  box-shadow:0 18px 50px rgba(91,84,230,.30)}
+.hero::after{content:"";position:absolute;right:-80px;top:-80px;width:320px;height:320px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.18),transparent 65%)}
+.hero-eyebrow{font-weight:600;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.9}
+.hero-title{font-size:34px;font-weight:800;line-height:1.12;margin:10px 0 10px;max-width:18ch}
+.hero p{font-size:15.5px;line-height:1.6;max-width:62ch;margin:0 0 20px;color:rgba(255,255,255,.92)}
+.hero .btn{background:#fff;color:#4a43d6;box-shadow:0 8px 22px rgba(0,0,0,.18)}
+.hero .btn:hover{background:#fff;filter:brightness(.98)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:#fff;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);padding:6px 12px;border-radius:999px}
+@media(max-width:640px){.hero{padding:30px 22px}.hero-title{font-size:27px}}
+
+.h1{font-size:21px;margin:26px 0 4px}
+.sectit{font-size:13px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* footer */
+.foot{margin:40px 0 26px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.foot .dot{opacity:.5}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 64 64" fill="none"><path d="M18 33l9 9 19-21" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    Slay Your Own Exam<span class="sub2">from your own PDFs</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="iconbtn" id="navHistory">History</button>
+  <button class="iconbtn" id="navSettings">Settings</button>
+  <button class="iconbtn" id="themeBtn">◐ Theme</button>
+</div>
+
+<!-- ============ SETUP ============ -->
+<section id="screen-setup" class="app">
+  <div class="hero">
+    <div class="hero-eyebrow">Your PDFs · real exam conditions</div>
+    <div class="hero-title">Turn any question bank into a board-day simulator.</div>
+    <p>Drop in your own question-bank PDF and practice it exactly like the real thing — verbatim questions, a 90-second timer, highlighting and answer elimination, the full lab-values sheet, then AI tutoring on precisely what you missed. Nothing is rewritten or generated.</p>
+    <button class="btn" id="heroStart">Start a test ↓</button>
+    <div class="chips">
+      <span class="chip">✓ Verbatim extraction</span>
+      <span class="chip">✓ 90-second timer</span>
+      <span class="chip">✓ Highlight &amp; strike</span>
+      <span class="chip">✓ Full USMLE lab values</span>
+      <span class="chip">✓ Tutored on your misses</span>
+    </div>
+  </div>
+
+  <div class="h1">Build a test from your PDF</div>
+  <p class="sub">Upload a question-bank PDF. The app pulls the questions out <b>verbatim</b> — nothing is rewritten or generated. You'll review every question before starting.</p>
+
+  <div class="card pad">
+    <div class="drop" id="drop">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">Drop a PDF here, or</div>
+      <button class="btn" id="pickBtn">Choose PDF</button>
+      <input type="file" id="file" accept="application/pdf" class="hidden">
+      <div class="status" id="setupStatus"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="grid2">
+      <div>
+        <label class="fld">Extraction method</label>
+        <select id="extractMethod">
+          <option value="claude">Claude (recommended — robust verbatim extraction, needs API key)</option>
+          <option value="local">Built-in parser (no key, best for clean numbered Q/A formats)</option>
+        </select>
+      </div>
+      <div>
+        <label class="fld">Test mode</label>
+        <select id="testMode">
+          <option value="test">Test mode — feedback at the end (most exam-like)</option>
+          <option value="tutor">Tutor mode — feedback after each question</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:10px" class="row">
+      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="shuffle"> Shuffle question order</label>
+      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="autoAdvance"> Auto-advance when 1:30 runs out</label>
+    </div>
+    <div style="margin-top:8px" class="row">
+      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="grabImages" checked> Pull medical images from the PDF into their question</label>
+      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="verifyImages"> Double-check each image is medical with Claude vision (slower)</label>
+    </div>
+    <p class="note" style="margin-top:10px">Per-question timer is fixed at <b>1:30 (90s)</b> with a pause button on every question, as you asked. Your extracted questions and test progress are saved in this browser automatically — refreshing or hitting Back won't lose them. Scanned/image PDFs have no selectable text — if extraction comes back empty, use a text-based PDF or an OCR tool first.</p>
+  </div>
+
+  <div class="card pad" style="margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <button class="btn ghost sm" id="importBtn">Import a saved test (.json)</button>
+    <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+    <span class="note" style="flex:1;min-width:220px">Switching to a newer version of this app? Browser saves don't carry between files — so <b>Export your test</b> (from the review or test screen), then import it here. Nothing lost.</span>
+  </div>
+
+  <div id="extractBox" class="hidden" style="margin-top:16px">
+    <div class="row" style="align-items:center">
+      <button class="btn" id="extractBtn">Extract questions</button>
+      <span class="status" id="extractStatus"></span>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Slay Your Own Exam — runs entirely in your browser. Your PDFs and answers never leave your device.</span>
+    <span><span class="dot">●</span> Built for focused board prep</span>
+  </div>
+</section>
+
+<!-- ============ REVIEW ============ -->
+<section id="screen-review" class="app hidden">
+  <div class="h1">Confirm the questions match your PDF</div>
+  <p class="sub">Everything is editable. Fix any extraction slip so it's word-for-word identical, and mark the correct answer (◉) if it isn't already set. Then start.</p>
+  <div class="card pad" style="margin-bottom:12px">
+    <div class="rangebox">
+      <div class="f">
+        <label class="fld">Start at question</label>
+        <input type="number" id="rangeFrom" min="1" value="1">
+      </div>
+      <div class="f">
+        <label class="fld">End at question</label>
+        <input type="number" id="rangeTo" min="1" value="1">
+      </div>
+      <div style="flex:1;min-width:180px">
+        <label class="fld">…or list specific ones</label>
+        <input type="text" id="rangeList" placeholder="e.g. 16-50  or  3,7,12-20">
+      </div>
+    </div>
+    <p class="note" style="margin-top:6px">Numbers refer to the positions in the list below (Q1, Q2, …). Leave the list blank to use the start/end range. The "list" box wins if you fill it in.</p>
+  </div>
+  <div class="row" style="margin-bottom:10px">
+    <button class="btn" id="startBtn">Start test</button>
+    <button class="btn ghost sm" id="addQ">+ Add blank question</button>
+    <button class="btn ghost sm" id="exportTestBtn">Export this test (file)</button>
+    <span class="note" id="reviewCount"></span>
+  </div>
+  <div id="reviewList"></div>
+  <div class="row" style="margin:14px 0 40px"><button class="btn" id="startBtn2">Start test</button></div>
+</section>
+
+<!-- ============ EXAM ============ -->
+<section id="screen-exam" class="hidden">
+  <div class="exwrap">
+    <div class="extop">
+      <span class="qno" id="exQno">Item 1 of 1</span>
+      <button class="tool flag" id="flagBtn">⚑ Flag</button>
+      <button class="tool" id="hlBtn">🖊 Highlight</button>
+      <button class="tool" id="stBtn">— Strike</button>
+      <button class="tool" id="eraseBtn">⌫ Clear marks</button>
+      <div class="spacer"></div>
+      <button class="tool" id="labBtn">Lab values</button>
+      <button class="tool" id="calcBtn">Calculator</button>
+      <button class="tool" id="pauseBtn">⏸ Pause</button>
+      <span class="timer" id="timer">1:30</span>
+    </div>
+
+    <div class="exbody" id="exBody">
+      <div class="stemwrap">
+        <div class="stem" id="stem"></div>
+      </div>
+      <div class="stemimgs" id="stemImgs"></div>
+      <div class="opts" id="opts"></div>
+      <div class="fb hidden" id="feedback"></div>
+    </div>
+
+    <div class="exbottom">
+      <button class="btn ghost sm" id="prevBtn">‹ Prev</button>
+      <div class="navmini" id="navMini"></div>
+      <div class="spacer"></div>
+      <button class="btn sm hidden" id="submitBtn">Submit</button>
+      <button class="btn sm" id="nextBtn">Next ›</button>
+      <button class="btn ghost sm" id="exportTestBtn2" title="Save this test and your progress to a file">⤓ Save file</button>
+      <button class="btn sm" id="endBtn">End test</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RESULTS ============ -->
+<section id="screen-results" class="app hidden">
+  <div class="h1">Results</div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card pad" style="margin-bottom:14px">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <b>Get your study outline</b>
+      <div class="row">
+        <button class="btn" id="analyzeBtn">Analyze with Claude</button>
+        <button class="btn ghost sm" id="exportSession">Export session (JSON)</button>
+      </div>
+    </div>
+    <p class="note" style="margin-top:8px">Sends timing, every highlight, every cross-out, your selections and answer changes to Claude (your API key) and returns a targeted plan. Or export the JSON and paste it into a Claude chat.</p>
+    <div id="analysisOut" class="md" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card pad">
+    <b>Question review</b>
+    <div style="overflow:auto;max-height:60vh;margin-top:8px">
+      <table class="rev" id="revTable"></table>
+    </div>
+  </div>
+  <div class="row" style="margin:16px 0 40px"><button class="btn ghost" id="backHome">New test</button></div>
+</section>
+
+<!-- ============ HISTORY ============ -->
+<section id="screen-history" class="app hidden">
+  <div class="h1">History</div>
+  <p class="sub">Saved on this computer only. Open a past session to re-review or re-analyze.</p>
+  <div id="historyList"></div>
+  <div class="row" style="margin:16px 0 40px"><button class="btn ghost" id="backHome2">Back</button></div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="screen-settings" class="app hidden">
+  <div class="h1">Settings</div>
+  <div class="card pad" style="max-width:640px">
+    <label class="fld">Color theme</label>
+    <select id="themeSel">
+      <option value="light">Light (default)</option>
+      <option value="mint">Mint</option>
+      <option value="green">Green</option>
+      <option value="ocean">Ocean Blue</option>
+      <option value="dark">Dark</option>
+    </select>
+    <div class="divider"></div>
+    <label class="fld">Anthropic API key</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-...">
+    <p class="note" style="margin-top:6px">Stored only in this browser, on this computer. Used for verbatim extraction and end-of-test analysis. Get one at <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>.</p>
+    <div class="divider"></div>
+    <div class="grid2">
+      <div>
+        <label class="fld">Extraction model</label>
+        <input type="text" id="extractModel" value="claude-sonnet-4-6">
+      </div>
+      <div>
+        <label class="fld">Analysis model</label>
+        <input type="text" id="analysisModel" value="claude-opus-4-8">
+      </div>
+    </div>
+    <p class="note" style="margin-top:8px">If a model name is rejected by your account, change it here (e.g. <code>claude-sonnet-4-6</code>, <code>claude-haiku-4-5-20251001</code>).</p>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="saveSettings">Save</button>
+      <button class="btn ghost sm" id="backHome3">Back</button>
+    </div>
+  </div>
+</section>
+
+<!-- modals -->
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   QBank — personal exam trainer. Single-file local app.
+   ========================================================================= */
+"use strict";
+
+const LS = {
+  settings:'qbank.settings', sessions:'qbank.sessions',
+  liveQ:'qbank.live.questions', live:'qbank.live.state', liveImg:'qbank.live.images'
+};
+const TIMER_SECONDS = 90;
+
+const state = {
+  pdfText:'', pdfName:'', pdfDoc:null,
+  questions:[],        // extracted/reviewed question set
+  order:[],            // index order for the test
+  cur:0,
+  mode:'test',
+  attempts:[],         // per-question attempt data, aligned to questions index
+  startedAt:0,
+  // live timer
+  tStart:0, tPaused:true, tAccumMs:0, tPauseAccumMs:0, tPauseStart:0, raf:null,
+  reviewMode:false,    // results review uses exam screen read-only
+  curSession:null
+};
+
+/* ---------- tiny helpers ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg,ms=2200){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),ms);}
+function uid(){return Math.random().toString(36).slice(2,10)}
+function fmtTime(ms){const s=Math.max(0,Math.round(ms/1000));const m=Math.floor(s/60);return m+':'+String(s%60).padStart(2,'0');}
+function loadJSON(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function saveJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Could not save (storage full?)')}}
+
+/* ---------- settings ---------- */
+let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light'});
+const THEMES=['light','mint','green','ocean','dark'];
+function applySettingsToUI(){
+  $('#apiKey').value=settings.apiKey||'';
+  $('#extractModel').value=settings.extractModel||'claude-sonnet-4-6';
+  $('#analysisModel').value=settings.analysisModel||'claude-opus-4-8';
+  const th=settings.theme||'light';
+  document.documentElement.setAttribute('data-theme',th);
+  const sel=$('#themeSel'); if(sel)sel.value=th;
+}
+function setTheme(t){settings.theme=t;saveJSON(LS.settings,settings);applySettingsToUI();}
+document.addEventListener('change',e=>{ if(e.target&&e.target.id==='themeSel')setTheme(e.target.value); });
+$('#saveSettings').onclick=()=>{
+  settings.apiKey=$('#apiKey').value.trim();
+  settings.extractModel=$('#extractModel').value.trim()||'claude-sonnet-4-6';
+  settings.analysisModel=$('#analysisModel').value.trim()||'claude-opus-4-8';
+  saveJSON(LS.settings,settings); toast('Settings saved'); backFromOverlay();
+};
+$('#themeBtn').onclick=()=>{const i=THEMES.indexOf(settings.theme||'light');setTheme(THEMES[(i+1)%THEMES.length]);toast('Theme: '+(settings.theme.charAt(0).toUpperCase()+settings.theme.slice(1)));};
+
+/* ---------- screen routing ---------- */
+function showScreen(name){
+  state.screen=name;
+  ['setup','review','exam','results','history','settings'].forEach(s=>{
+    $('#screen-'+s).classList.toggle('hidden',s!==name);
+  });
+  window.scrollTo(0,0);
+}
+/* Settings & History are overlays: opening them pauses the test (no time lost)
+   and Back/Save returns you exactly where you were. */
+let returnScreen=null;
+function gotoOverlay(name){
+  if(state.screen==='settings'||state.screen==='history'){showScreen(name);return;} // already in an overlay
+  returnScreen=state.screen;
+  if(state.screen==='exam'&&!state.tPaused){ // freeze the timer so no time is lost
+    state.tAccumMs=state.tAccumMs+(Date.now()-state.tStart);
+    const a=curA&&curQ()?curA():null; if(a)a.activeMs=state.tAccumMs;
+    state.tPaused=true; cancelAnimationFrame(state.raf);
+  }
+  saveLiveState(); // capture progress before leaving the test screen
+  showScreen(name);
+}
+function backFromOverlay(){
+  const r=returnScreen||'setup'; returnScreen=null;
+  if(r==='exam'&&state.order&&state.order.length){showScreen('exam');loadQuestion(state.cur);}
+  else if(r==='review'&&state.questions.length){renderReview();showScreen('review');}
+  else if(r==='results'&&state.curSession){renderResults(state.curSession);if(state.curSession.analysis)$('#analysisOut').innerHTML=mdToHtml(state.curSession.analysis);showScreen('results');}
+  else showScreen('setup');
+}
+$('#navSettings').onclick=()=>gotoOverlay('settings');
+$('#navHistory').onclick=()=>{renderHistory();gotoOverlay('history');};
+$('#backHome').onclick=()=>{ if(confirm('Start a new test? Your current questions and progress will be cleared from this browser.')){clearLive();state.questions=[];state.attempts=[];state.order=[];state.curSession=null;showScreen('setup');} };
+$('#backHome2').onclick=$('#backHome3').onclick=()=>backFromOverlay();
+
+/* ---------- live persistence (survives refresh / Back) ---------- */
+function collectOptions(){return {
+  extractMethod:$('#extractMethod').value, testMode:$('#testMode').value,
+  shuffle:$('#shuffle').checked, autoAdvance:$('#autoAdvance').checked,
+  grabImages:$('#grabImages').checked, verifyImages:$('#verifyImages').checked
+};}
+function applyOptions(o){ if(!o)return;
+  if(o.extractMethod)$('#extractMethod').value=o.extractMethod;
+  if(o.testMode)$('#testMode').value=o.testMode;
+  $('#shuffle').checked=!!o.shuffle; $('#autoAdvance').checked=!!o.autoAdvance;
+  $('#grabImages').checked=o.grabImages!==false; $('#verifyImages').checked=o.verifyImages!==false;
+}
+function bankTimer(){ // write current question's active time into its attempt (no UI change)
+  if(state.reviewMode||!state.order||!state.order.length)return;
+  const a=state.attempts[state.order[state.cur]];if(!a)return;
+  a.activeMs=state.tPaused?state.tAccumMs:state.tAccumMs+(Date.now()-state.tStart);
+}
+function saveLiveQ(){ // questions WITHOUT image bytes — small, so it (almost) always fits
+  const qNoImg=state.questions.map(q=>{const c=Object.assign({},q);delete c.images;return c;});
+  try{localStorage.setItem(LS.liveQ,JSON.stringify({pdfName:state.pdfName,questions:qNoImg,options:collectOptions()}));}
+  catch(e){toast('Storage is full — clear some History so your test can be saved.');return;}
+  // images stored separately and best-effort: if they don't fit, the test still survives
+  const anyImg=state.questions.some(q=>q.images&&q.images.length);
+  if(anyImg){
+    try{localStorage.setItem(LS.liveImg,JSON.stringify(state.questions.map(q=>q.images||[])));}
+    catch(e){try{localStorage.removeItem(LS.liveImg);}catch(_){}}
+  }else{try{localStorage.removeItem(LS.liveImg);}catch(_){}}
+}
+function saveLiveState(){ // the small, fast-changing exam/progress state — written on every action
+  if(!state.questions.length)return;
+  if(state.screen!=='exam'&&state.screen!=='review'&&state.screen!=='results')return; // don't overwrite with overlay screens
+  bankTimer();
+  const snap={screen:state.screen,mode:state.mode,order:state.order,cur:state.cur,
+    attempts:state.attempts,startedAt:state.startedAt,reviewMode:state.reviewMode,
+    session:state.curSession?state.curSession.id:null,savedAt:Date.now()};
+  try{localStorage.setItem(LS.live,JSON.stringify(snap));}catch(e){}
+}
+let _liveQTimer=null;
+function saveLiveQSoon(){clearTimeout(_liveQTimer);_liveQTimer=setTimeout(saveLiveQ,1200);} // debounce review edits
+function clearLive(){try{localStorage.removeItem(LS.live);localStorage.removeItem(LS.liveQ);localStorage.removeItem(LS.liveImg);}catch(e){}}
+function tryResume(){
+  let q=null,s=null;
+  try{q=JSON.parse(localStorage.getItem(LS.liveQ)||'null');}catch(e){}
+  try{s=JSON.parse(localStorage.getItem(LS.live)||'null');}catch(e){}
+  if(!q||!Array.isArray(q.questions)||!q.questions.length)return false;
+  state.questions=q.questions;state.questions.forEach((qq,i)=>{qq.id=qq.id||uid();qq.idx=i;qq.images=qq.images||[];});
+  // re-attach images if they were saved
+  try{const imgs=JSON.parse(localStorage.getItem(LS.liveImg)||'null');
+    if(Array.isArray(imgs))state.questions.forEach((qq,i)=>{qq.images=imgs[i]||[];});}catch(e){}
+  state.pdfName=q.pdfName||'';applyOptions(q.options);
+  if(s&&s.screen==='exam'&&Array.isArray(s.order)&&Array.isArray(s.attempts)){
+    state.order=s.order;state.attempts=s.attempts;state.cur=Math.min(s.cur||0,s.order.length-1);
+    state.mode=s.mode||'test';state.startedAt=s.startedAt||Date.now();state.reviewMode=false;
+    showScreen('exam');loadQuestion(state.cur);
+    toast('Resumed your test where you left off');return true;
+  }
+  if(s&&s.screen==='results'&&s.session){
+    const sess=loadJSON(LS.sessions,[]).find(x=>x.id===s.session);
+    if(sess){state.curSession=sess;renderResults(sess);if(sess.analysis)$('#analysisOut').innerHTML=mdToHtml(sess.analysis);showScreen('results');return true;}
+  }
+  renderReview();showScreen('review');toast('Restored your extracted questions — pick up where you left off');return true;
+}
+window.addEventListener('beforeunload',()=>{ if(state.screen==='exam')saveLiveState(); });
+
+/* =========================================================================
+   1. PDF UPLOAD + TEXT EXTRACTION
+   ========================================================================= */
+if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}
+const drop=$('#drop');
+$('#pickBtn').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)handleFile(f);});
+
+async function handleFile(file){
+  if(!window.pdfjsLib){toast('PDF engine did not load — check your internet connection and refresh.');return;}
+  if(file.type!=='application/pdf'){toast('Please choose a PDF');return;}
+  state.pdfName=file.name;
+  $('#setupStatus').textContent='Reading '+file.name+' …';
+  try{
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    state.pdfDoc=pdf;
+    let txt='';
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const c=await page.getTextContent();
+      // reconstruct lines from y-positions; insert spacing from x-gaps so
+      // two-column lab data keeps its label/value separation
+      let lastY=null,lastXEnd=null,line='';const lines=[];
+      for(const it of c.items){
+        const x=it.transform[4], y=it.transform[5], w=it.width||0;
+        const h=Math.abs(it.transform[3])||it.height||10;
+        if(lastY!==null&&Math.abs(y-lastY)>Math.max(3,h*0.5)){lines.push(line);line='';lastXEnd=null;}
+        if(lastXEnd!==null){
+          const gap=x-lastXEnd;
+          if(gap>h*1.0) line+='   ';                                            // column gap → separator
+          else if(gap>h*0.16 && !/\s$/.test(line) && !/^\s/.test(it.str)) line+=' '; // ordinary word space
+        }
+        line+=it.str; lastXEnd=x+w; lastY=y;
+      }
+      if(line)lines.push(line);
+      txt+=lines.join('\n')+'\n\n';
+      $('#setupStatus').textContent='Reading page '+p+' / '+pdf.numPages+' …';
+    }
+    state.pdfText=txt.trim();
+    const chars=state.pdfText.length;
+    if(chars<40){
+      $('#setupStatus').textContent='⚠ Almost no selectable text found ('+chars+' chars). This looks like a scanned/image PDF. Run it through OCR first, then re-upload.';
+    }else{
+      $('#setupStatus').textContent='✓ Loaded '+pdf.numPages+' pages, '+chars.toLocaleString()+' characters. Ready to extract.';
+    }
+    $('#extractBox').classList.remove('hidden');
+  }catch(err){
+    console.error(err);
+    $('#setupStatus').textContent='Could not read this PDF: '+err.message;
+  }
+}
+
+/* =========================================================================
+   2. QUESTION EXTRACTION  (Claude verbatim  OR  local parser)
+   ========================================================================= */
+$('#extractBtn').onclick=async()=>{
+  if(!state.pdfText){toast('Upload a PDF first');return;}
+  state.mode=$('#testMode').value;
+  const method=$('#extractMethod').value;
+  const st=$('#extractStatus');
+  $('#extractBtn').disabled=true;
+  try{
+    let qs;
+    if(method==='local'){
+      st.innerHTML='Parsing locally …';
+      qs=localParse(state.pdfText);
+    }else{
+      if(!settings.apiKey){st.innerHTML='Add your API key in Settings first (or switch to the built-in parser).';$('#extractBtn').disabled=false;return;}
+      st.innerHTML='<span class="spin"></span> Extracting verbatim with Claude …';
+      qs=await claudeExtract(state.pdfText,m=>st.innerHTML='<span class="spin"></span> '+m);
+    }
+    if(!qs.length){st.innerHTML='No questions detected. Try the other extraction method, or check the PDF.';$('#extractBtn').disabled=false;return;}
+    qs.forEach((q,i)=>{q.id=q.id||uid();q.idx=i;q.images=q.images||[];});
+    state.questions=qs;
+    // medical images
+    if($('#grabImages').checked&&state.pdfDoc){
+      try{
+        st.innerHTML='<span class="spin"></span> Finding images in the PDF …';
+        await attachImages(state.pdfDoc,qs,$('#verifyImages').checked,m=>st.innerHTML='<span class="spin"></span> '+m);
+      }catch(imgErr){console.error('image step',imgErr);toast('Image extraction had trouble — questions are fine, images skipped.');}
+    }
+    renderReview();
+    saveLiveQ();saveLiveState();
+    showScreen('review');
+  }catch(err){
+    console.error(err);st.innerHTML='Extraction failed: '+esc(err.message);
+  }finally{$('#extractBtn').disabled=false;}
+};
+
+/* ---- local heuristic parser (fallback, no API) ---- */
+function localParse(text){
+  const lines=text.split('\n');
+  const qStart=/^\s*(?:Q(?:uestion)?\s*)?(\d{1,3})[\.\)\:]\s+(.*)/i;
+  const optStart=/^\s*\(?([A-Ea-e])[\.\)]\s+(.*)/;
+  const ansKey=/^\s*(?:answer|correct(?:\s*answer)?|ans)\s*[:\-]?\s*\(?([A-Ea-e])\)?/i;
+  const out=[];let cur=null,bucket='stem';
+  const push=()=>{if(cur&&cur.options.length>=2){cur.stem=cur.stem.trim();out.push(cur);}};
+  for(let raw of lines){
+    const line=raw.replace(/\s+$/,'');
+    let m;
+    if((m=qStart.exec(line))&&(!cur||cur.options.length>=2)){
+      push();cur={number:m[1],stem:m[2]||'',options:[],correct:null,explanation:''};bucket='stem';continue;
+    }
+    if(!cur)continue;
+    if((m=optStart.exec(line))){cur.options.push({letter:m[1].toUpperCase(),text:m[2]||''});bucket='opt';continue;}
+    if((m=ansKey.exec(line))){cur.correct=m[1].toUpperCase();bucket='expl';continue;}
+    // continuation
+    if(bucket==='stem')cur.stem+=' '+line.trim();
+    else if(bucket==='opt'&&cur.options.length)cur.options[cur.options.length-1].text+=' '+line.trim();
+    else if(bucket==='expl')cur.explanation+=(cur.explanation?' ':'')+line.trim();
+  }
+  push();
+  return out;
+}
+
+/* ---- run async work with a concurrency cap (keeps order, avoids rate limits) ---- */
+async function pMapLimit(items,limit,fn){
+  const results=new Array(items.length);let i=0;
+  async function worker(){while(i<items.length){const idx=i++;results[idx]=await fn(items[idx],idx);}}
+  const n=Math.min(limit,items.length)||0;const workers=[];
+  for(let k=0;k<n;k++)workers.push(worker());
+  await Promise.all(workers);
+  return results;
+}
+
+/* ---- Claude verbatim extraction (chunks run in parallel) ---- */
+function chunkText(text,size=12000){
+  const paras=text.split(/\n\s*\n/);const chunks=[];let buf='';
+  for(const p of paras){
+    if((buf+'\n\n'+p).length>size&&buf){chunks.push(buf);buf=p;}
+    else buf=buf?buf+'\n\n'+p:p;
+  }
+  if(buf)chunks.push(buf);
+  return chunks;
+}
+async function claudeExtract(text,onProg){
+  const chunks=chunkText(text);
+  let done=0;
+  const sys="You extract EXISTING exam questions from a document. Copy text EXACTLY, verbatim, character for character — including every answer choice. Do NOT paraphrase, summarize, fix typos, translate, or invent anything. Preserve the original line breaks. For laboratory or other tabular data, keep each row on its own line and KEEP the run of spaces that separates a label from its value (e.g. 'Sodium    140 mEq/L') — never collapse a table into a paragraph. Only include items that are clearly multiple-choice questions present in the text. Identify the correct answer ONLY if the text explicitly indicates it (answer key, 'Answer: X', bolded/marked choice, or an explanation that states it); otherwise use null. Capture an explanation only if one is literally present in the text. Output ONLY JSON.";
+  const schema='Return JSON exactly like: {"questions":[{"number":"<original number or empty>","stem":"<verbatim question vignette + lead-in>","options":[{"letter":"A","text":"<verbatim>"}],"correct":"A or null","explanation":"<verbatim or empty>"}]}';
+  // 5 chunks at a time — big speed-up vs one-at-a-time, order preserved
+  const arrays=await pMapLimit(chunks,5,async(chunk)=>{
+    const msg='DOCUMENT CHUNK:\n"""\n'+chunk+'\n"""\n\n'+schema+'\nReturn only the JSON object, no prose, no code fences.';
+    const resp=await anthropic(settings.extractModel,sys,[{role:'user',content:msg}],8000);
+    done++;onProg&&onProg('Extracting questions … '+done+'/'+chunks.length+' sections done');
+    const obj=parseJSON(resp);
+    return (obj&&Array.isArray(obj.questions))?obj.questions:[];
+  });
+  let all=[];arrays.forEach(a=>{all=all.concat(a);});
+  // normalize
+  return all.filter(q=>q&&q.stem&&Array.isArray(q.options)&&q.options.length>=2).map(q=>({
+    number:q.number||'', stem:String(q.stem),
+    options:q.options.map((o,j)=>({letter:o.letter||String.fromCharCode(65+j),text:String(o.text||'')})),
+    correct:q.correct&&/^[A-Ea-e]$/.test(q.correct)?q.correct.toUpperCase():null,
+    explanation:q.explanation||''
+  }));
+}
+function parseJSON(s){
+  if(!s)return null;
+  let t=s.trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  try{return JSON.parse(t)}catch(e){}
+  const a=t.indexOf('{'),b=t.lastIndexOf('}');
+  if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}
+  return null;
+}
+
+/* ---- Anthropic API (direct browser) ---- */
+async function anthropic(model,system,messages,maxTokens=4096){
+  const r=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':settings.apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({model,max_tokens:maxTokens,system,messages})
+  });
+  if(!r.ok){
+    let detail='';try{const e=await r.json();detail=e.error&&e.error.message?e.error.message:JSON.stringify(e);}catch(_){detail=await r.text();}
+    throw new Error('API '+r.status+': '+detail);
+  }
+  const data=await r.json();
+  return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+}
+
+/* =========================================================================
+   2b. MEDICAL IMAGE EXTRACTION  (tie each image to its question by position)
+   ========================================================================= */
+const IMG_SCALE=1.5;
+function matApply(m,x,y){return [x*m[0]+y*m[2]+m[4], x*m[1]+y*m[3]+m[5]];}
+function matMul(a,b){return [
+  a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+  a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+  a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]
+];}
+function mergeBoxes(boxes,pad){
+  let bs=boxes.map(b=>Object.assign({},b)),changed=true;
+  const overlap=(a,b)=>!(a.x1+pad<b.x0||b.x1+pad<a.x0||a.y1+pad<b.y0||b.y1+pad<a.y0);
+  while(changed){
+    changed=false;
+    outer:for(let i=0;i<bs.length;i++)for(let j=i+1;j<bs.length;j++){
+      if(overlap(bs[i],bs[j])){
+        bs[i]={x0:Math.min(bs[i].x0,bs[j].x0),y0:Math.min(bs[i].y0,bs[j].y0),x1:Math.max(bs[i].x1,bs[j].x1),y1:Math.max(bs[i].y1,bs[j].y1)};
+        bs.splice(j,1);changed=true;break outer;
+      }
+    }
+  }
+  return bs;
+}
+async function extractPageImages(page){
+  const OPS=pdfjsLib.OPS;
+  const imgOps=new Set([OPS.paintImageXObject,OPS.paintInlineImageXObject,OPS.paintImageXObjectRepeat].filter(v=>v!==undefined));
+  const opList=await page.getOperatorList();
+  let hasImg=false;for(const fn of opList.fnArray){if(imgOps.has(fn)){hasImg=true;break;}}
+  const viewport=page.getViewport({scale:IMG_SCALE});
+  // text anchors (question-start markers) on this page, in device coords
+  const anchors=[];
+  try{
+    const tc=await page.getTextContent();
+    const lines={};
+    for(const it of tc.items){
+      const p=matApply(viewport.transform,it.transform[4],it.transform[5]);
+      const key=Math.round(p[1]/2)*2;
+      (lines[key]=lines[key]||{y:p[1],t:''}).t+=it.str;
+    }
+    const re=/^\s*(?:Q(?:uestion)?\s*)?(\d{1,3})[\.\)\:]\s/i;
+    Object.values(lines).forEach(l=>{const m=re.exec(l.t);if(m)anchors.push({num:parseInt(m[1],10),y:l.y});});
+    anchors.sort((a,b)=>a.y-b.y);
+  }catch(e){}
+  if(!hasImg)return {anchors,images:[]};
+  // render page once
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+  const ctx=canvas.getContext('2d');
+  await page.render({canvasContext:ctx,viewport}).promise;
+  // walk ops to find image placement boxes
+  let ctm=viewport.transform.slice();const stack=[];const boxes=[];
+  for(let i=0;i<opList.fnArray.length;i++){
+    const fn=opList.fnArray[i],args=opList.argsArray[i];
+    if(fn===OPS.save)stack.push(ctm.slice());
+    else if(fn===OPS.restore)ctm=stack.pop()||viewport.transform.slice();
+    else if(fn===OPS.transform)ctm=matMul(ctm,args);
+    else if(OPS.paintFormXObjectBegin!==undefined&&fn===OPS.paintFormXObjectBegin){stack.push(ctm.slice());if(Array.isArray(args[0])&&args[0].length===6)ctm=matMul(ctm,args[0]);}
+    else if(OPS.paintFormXObjectEnd!==undefined&&fn===OPS.paintFormXObjectEnd){ctm=stack.pop()||viewport.transform.slice();}
+    else if(imgOps.has(fn)){
+      const cs=[[0,0],[1,0],[1,1],[0,1]].map(p=>matApply(ctm,p[0],p[1]));
+      const xs=cs.map(p=>p[0]),ys=cs.map(p=>p[1]);
+      boxes.push({x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)});
+    }
+  }
+  const pageW=viewport.width,pageH=viewport.height;
+  let kept=boxes.filter(b=>{
+    const w=b.x1-b.x0,h=b.y1-b.y0,pw=w/IMG_SCALE,ph=h/IMG_SCALE;
+    if(pw<28||ph<28)return false;                 // icons / bullets
+    if(w>=0.95*pageW&&h>=0.95*pageH)return false; // full-page background / scan
+    if(b.y1<pageH*0.07)return false;              // header band
+    if(b.y0>pageH*0.95)return false;              // footer band
+    return true;
+  });
+  kept=mergeBoxes(kept,6*IMG_SCALE);
+  // crop
+  const images=[];
+  for(const b of kept){
+    const x0=Math.max(0,Math.floor(b.x0)),y0=Math.max(0,Math.floor(b.y0));
+    const x1=Math.min(canvas.width,Math.ceil(b.x1)),y1=Math.min(canvas.height,Math.ceil(b.y1));
+    let w=x1-x0,h=y1-y0;if(w<10||h<10)continue;
+    // optional downscale for size
+    const maxW=900;let dw=w,dh=h;if(w>maxW){dw=maxW;dh=Math.round(h*maxW/w);}
+    const cc=document.createElement('canvas');cc.width=dw;cc.height=dh;
+    cc.getContext('2d').drawImage(canvas,x0,y0,w,h,0,0,dw,dh);
+    images.push({yTop:b.y0,dataURL:cc.toDataURL('image/jpeg',0.85)});
+  }
+  images.sort((a,b)=>a.yTop-b.yTop);
+  return {anchors,images};
+}
+async function attachImages(pdf,questions,verify,onProg){
+  const byNum={};            // question number -> [dataURL]
+  const ordered=[];          // images in reading order for positional fallback
+  let carry=null;            // last question number seen across page boundary
+  for(let p=1;p<=pdf.numPages;p++){
+    onProg&&onProg('Scanning page '+p+' / '+pdf.numPages+' for images …');
+    const page=await pdf.getPage(p);
+    const {anchors,images}=await extractPageImages(page);
+    // sweep this page by y, assigning each image to the nearest question-start above it
+    const events=[];
+    anchors.forEach(a=>events.push({y:a.y,kind:'a',num:a.num}));
+    images.forEach(im=>events.push({y:im.yTop,kind:'i',dataURL:im.dataURL}));
+    events.sort((x,y)=>x.y-y.y||(x.kind==='a'?-1:1));
+    for(const ev of events){
+      if(ev.kind==='a')carry=ev.num;
+      else{const n=carry;(byNum[n]=byNum[n]||[]).push(ev.dataURL);ordered.push({num:n,dataURL:ev.dataURL});}
+    }
+  }
+  // verify medical with vision (optional)
+  let allow=null;
+  if(verify&&settings.apiKey&&ordered.length){
+    try{onProg&&onProg('Checking '+ordered.length+' image(s) are medical …');
+      allow=await visionFilter(ordered.map(o=>o.dataURL),onProg);
+    }catch(e){console.error('vision',e);allow=null;}
+  }
+  // build a per-question pull, honoring the allow-list
+  const finalByNum={};
+  ordered.forEach((o,i)=>{if(allow&&allow[i]===false)return;(finalByNum[o.num]=finalByNum[o.num]||[]).push(o.dataURL);});
+  const anyNumbers=questions.some(q=>parseInt(q.number,10)>0);
+  if(anyNumbers&&Object.keys(finalByNum).length){
+    questions.forEach(q=>{const n=parseInt(q.number,10);if(finalByNum[n])q.images=finalByNum[n].slice();});
+  }else{
+    // positional fallback: distribute image groups (in reading order) to questions in order
+    const keys=Object.keys(finalByNum);
+    keys.forEach((k,idx)=>{if(questions[idx])questions[idx].images=finalByNum[k].slice();});
+  }
+}
+async function visionFilter(dataURLs,onProg){
+  const result=new Array(dataURLs.length).fill(true);
+  const B=8;const batches=[];
+  for(let s=0;s<dataURLs.length;s+=B)batches.push({s,urls:dataURLs.slice(s,s+B)});
+  let done=0;
+  await pMapLimit(batches,3,async(b)=>{
+    const content=[{type:'text',text:'For each image below, in order, decide if it is a MEDICAL image that would belong to an exam question — e.g. radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, histology or microscopy, gram stain, gross pathology, clinical/dermatology/fundus photo, or a medical diagram/figure. Logos, headers, footers, icons, watermarks, decorative graphics, or plain UI chrome are NOT medical. Reply with ONLY a JSON array of true/false, one per image, same order. Example: [true,false,true]'}];
+    b.urls.forEach(u=>{const m=/^data:(.*?);base64,(.*)$/.exec(u);if(m)content.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});});
+    try{
+      const resp=await anthropic(settings.extractModel,'You classify whether images are medical exam figures. Output JSON only.',[{role:'user',content}],400);
+      const arr=parseJSON(resp);
+      if(Array.isArray(arr))arr.forEach((v,i)=>{if(b.s+i<result.length)result[b.s+i]=!!v;});
+    }catch(e){console.error('vision batch',e);/* keep defaults (true) on failure */}
+    done+=b.urls.length;onProg&&onProg('Checking images are medical … '+done+'/'+dataURLs.length);
+  });
+  return result;
+}
+
+
+function renderReview(){
+  const wrap=$('#reviewList');wrap.innerHTML='';
+  state.questions.forEach((q,i)=>wrap.appendChild(reviewCard(q,i)));
+  $('#reviewCount').textContent=state.questions.length+' questions';
+  const rt=$('#rangeTo'),rf=$('#rangeFrom');
+  if(rt){rt.max=state.questions.length;rt.value=state.questions.length;}
+  if(rf){rf.max=state.questions.length;if(+rf.value<1)rf.value=1;}
+}
+function reviewCard(q,i){
+  const el=document.createElement('div');el.className='qrev';
+  el.innerHTML=`
+    <div class="top">
+      <b>Q${i+1}</b>
+      <span class="note">original #: ${esc(q.number||'—')}</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn ghost sm" data-act="addopt">+ option</button>
+      <button class="btn ghost sm" data-act="del">delete</button>
+    </div>
+    <textarea data-f="stem" rows="3" placeholder="Question text (verbatim)">${esc(q.stem)}</textarea>
+    <div class="opts" data-opts></div>
+    <div style="padding:8px 10px">
+      <label class="fld">Explanation (verbatim, optional)</label>
+      <textarea data-f="explanation" rows="2">${esc(q.explanation||'')}</textarea>
+    </div>`;
+  const optsBox=el.querySelector('[data-opts]');
+  function drawOpts(){
+    optsBox.innerHTML='';
+    q.options.forEach((o,j)=>{
+      const row=document.createElement('div');row.className='optrow';
+      row.innerHTML=`<input type="radio" name="cor-${i}" ${q.correct===o.letter?'checked':''} title="Mark correct">
+        <span class="lt">${esc(o.letter)}</span>
+        <input type="text" value="${esc(o.text)}" data-opt="${j}">
+        <button class="btn ghost sm" data-act="delopt" data-j="${j}">✕</button>`;
+      row.querySelector('input[type=radio]').onchange=()=>{q.correct=o.letter;};
+      row.querySelector('input[type=text]').oninput=e=>{o.text=e.target.value;};
+      row.querySelector('[data-act=delopt]').onclick=()=>{q.options.splice(j,1);relabel(q);drawOpts();};
+      optsBox.appendChild(row);
+    });
+  }
+  drawOpts();
+  // images
+  if(q.images&&q.images.length){
+    const ib=document.createElement('div');ib.className='revimgs';
+    q.images.forEach((src,j)=>{
+      const d=document.createElement('div');d.className='revimg';
+      d.innerHTML=`<img src="${src}" alt="figure"><button class="x" title="Remove image">✕</button>`;
+      d.querySelector('.x').onclick=()=>{q.images.splice(j,1);renderReview();};
+      ib.appendChild(d);
+    });
+    el.appendChild(ib);
+  }
+  el.querySelector('[data-f=stem]').oninput=e=>{q.stem=e.target.value;saveLiveQSoon();};
+  el.querySelector('[data-f=explanation]').oninput=e=>{q.explanation=e.target.value;saveLiveQSoon();};
+  el.querySelector('[data-act=addopt]').onclick=()=>{q.options.push({letter:String.fromCharCode(65+q.options.length),text:''});relabel(q);drawOpts();};
+  el.querySelector('[data-act=del]').onclick=()=>{state.questions.splice(i,1);renderReview();};
+  return el;
+}
+function relabel(q){q.options.forEach((o,j)=>{o.letter=String.fromCharCode(65+j);});if(q.correct&&q.correct.charCodeAt(0)-65>=q.options.length)q.correct=null;}
+$('#addQ').onclick=()=>{state.questions.push({id:uid(),number:'',stem:'',options:[{letter:'A',text:''},{letter:'B',text:''}],correct:null,explanation:''});renderReview();};
+$('#startBtn').onclick=$('#startBtn2').onclick=startTest;
+
+/* =========================================================================
+   4. EXAM ENGINE
+   ========================================================================= */
+function parseRange(str,max){
+  const set=new Set();
+  str.split(',').forEach(part=>{
+    part=part.trim();if(!part)return;
+    const m=/^(\d+)\s*-\s*(\d+)$/.exec(part);
+    if(m){let a=+m[1],b=+m[2];if(a>b)[a,b]=[b,a];for(let i=a;i<=b;i++)if(i>=1&&i<=max)set.add(i-1);}
+    else{const n=+part;if(n>=1&&n<=max)set.add(n-1);}
+  });
+  return Array.from(set).sort((x,y)=>x-y);
+}
+function startTest(){
+  const all=state.questions.filter(q=>q.stem&&q.options.length>=2);
+  if(!all.length){toast('Need at least one complete question');return;}
+  state.questions=all;state.questions.forEach((q,i)=>q.idx=i);
+  const N=all.length;
+  let picked;
+  const listStr=($('#rangeList').value||'').trim();
+  if(listStr){picked=parseRange(listStr,N);}
+  else{
+    let f=Math.max(1,Math.min(N,parseInt($('#rangeFrom').value)||1));
+    let t=Math.max(1,Math.min(N,parseInt($('#rangeTo').value)||N));
+    if(f>t)[f,t]=[t,f];
+    picked=[];for(let i=f;i<=t;i++)picked.push(i-1);
+  }
+  if(!picked.length){toast('That range selects no questions');return;}
+  state.order=picked.slice();
+  if($('#shuffle').checked)for(let i=state.order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[state.order[i],state.order[j]]=[state.order[j],state.order[i]];}
+  state.mode=$('#testMode').value;
+  state.reviewMode=false;
+  state.attempts=all.map(()=>({selected:null,correctSelected:null,activeMs:0,pausedMs:0,visits:0,
+    answerChanges:[],eliminated:[],flagged:false,expired:false,stemHTML:null,highlights:[],strikes:[],submitted:false}));
+  state.cur=0;state.startedAt=Date.now();
+  showScreen('exam');
+  saveLiveQ();
+  loadQuestion(0);
+}
+
+function curQ(){return state.questions[state.order[state.cur]];}
+function curA(){return state.attempts[state.order[state.cur]];}
+
+/* Turn verbatim stem text into clean HTML: prose reflows into paragraphs,
+   lab/tabular blocks become aligned tables. Words are never changed — only layout. */
+function renderStem(text){
+  const lines=String(text||'').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+$/,''));
+  const out=[];let prose=[];let data=[];
+  const flushProse=()=>{ if(prose.length){out.push('<p>'+esc(prose.join(' ').replace(/\s+/g,' ').trim())+'</p>');prose=[];} };
+  const flushData=()=>{
+    const rows=data;data=[];
+    if(rows.length<2){ if(rows.length===1)prose.push(rows[0].cells.join('  ')); return; }
+    const maxCols=rows.reduce((m,r)=>Math.max(m,r.header?1:r.cells.length),0);
+    let html='<div class="labwrap"><table class="labtable">';
+    for(const r of rows){
+      if(r.header){html+='<tr><td class="lh" colspan="'+maxCols+'">'+esc(r.cells[0])+'</td></tr>';continue;}
+      html+='<tr'+(r.indent?' class="subgroup"':'')+'>'+r.cells.map((c,ci)=>
+        '<td class="'+(ci===0?'lk':'lv')+'">'+esc(c)+'</td>').join('')+'</tr>';
+    }
+    html+='</table></div>';out.push(html);
+  };
+  const subHeader=/^(serum|urine|plasma|blood|arterial blood gas|csf|cerebrospinal fluid)\s*:?\s*$/i;
+  const asData=(line)=>{
+    const t=line.replace(/^\s+/,'');const indent=line.length-t.length>0;
+    let cells=t.split(/\s{2,}/).map(s=>s.trim()).filter(Boolean);
+    if(cells.length>=2 && /[\d<>+%]/.test(cells.slice(1).join(' '))) return {cells,indent};
+    // fallback for short "Label value" rows where spacing was collapsed (e.g. 'Na+ 140 mEq/L')
+    if(t.length<=42){
+      const m=/^([A-Za-z][A-Za-z0-9+\-().,/ ]{0,26}?)\s+((?:[<>]?\d[\d.,]*\s?[A-Za-z%/µμ°·].*)|(?:[<>]?\d[\d.,]*\+?%?)|positive|negative|trace|reddish)$/i.exec(t);
+      if(m && !/\b(is|are|was|were|the|and|for|with|of|at|to|in|on|by|he|she|her|his|had|has|note[ds]?|show[ns]?)\b/i.test(m[1]))
+        return {cells:[m[1].trim(),m[2].trim()],indent};
+    }
+    return null;
+  };
+  for(const line of lines){
+    if(/^\s*$/.test(line))continue;
+    const d=asData(line);
+    if(d){flushProse();data.push(d);continue;}
+    if(subHeader.test(line.trim())){flushProse();data.push({header:true,cells:[line.trim()]});continue;}
+    flushData();prose.push(line.trim());
+  }
+  flushProse();flushData();
+  return out.join('')||('<p>'+esc(String(text||''))+'</p>');
+}
+
+function loadQuestion(i){
+  stopTimer(true); // bank time for previous
+  state.cur=i;
+  const q=curQ(),a=curA();
+  a.visits++;
+  $('#exQno').textContent='Item '+(i+1)+' of '+state.order.length;
+  // stem (restore marks if any, else render cleanly)
+  const stem=$('#stem');
+  if(a.stemHTML!=null)stem.innerHTML=a.stemHTML;
+  else stem.innerHTML=renderStem(q.stem);
+  bindMarkClicks();
+  // medical images for this question
+  const ib=$('#stemImgs');ib.innerHTML='';
+  if(q.images&&q.images.length){q.images.forEach(src=>{const im=document.createElement('img');im.className='qimg';im.src=src;im.alt='Medical figure for this question';ib.appendChild(im);});}
+  // options
+  renderOptions(q,a);
+  // flag
+  $('#flagBtn').classList.toggle('on',!!a.flagged);
+  // feedback area
+  $('#feedback').classList.add('hidden');$('#feedback').innerHTML='';
+  // buttons
+  const showSubmit=(state.mode==='tutor'&&!a.submitted&&!state.reviewMode);
+  $('#submitBtn').classList.toggle('hidden',!showSubmit);
+  $('#endBtn').classList.toggle('hidden',state.reviewMode);
+  $('#pauseBtn').classList.toggle('hidden',state.reviewMode);
+  // if tutor already submitted, or review mode → show feedback
+  if(state.reviewMode||(state.mode==='tutor'&&a.submitted))showFeedback(q,a);
+  renderNavMini();
+  // timer
+  if(!state.reviewMode){resetTimerDisplay();startTimer();}
+  else{$('#timer').textContent=fmtTime(a.activeMs);}
+  if(!state.reviewMode)saveLiveState();
+}
+
+function renderOptions(q,a){
+  const box=$('#opts');box.innerHTML='';
+  const reveal=state.reviewMode||(state.mode==='tutor'&&a.submitted);
+  q.options.forEach(o=>{
+    const el=document.createElement('div');el.className='opt';
+    if(a.selected===o.letter)el.classList.add('sel');
+    if(a.eliminated.includes(o.letter))el.classList.add('elim');
+    if(reveal){
+      if(q.correct&&o.letter===q.correct)el.classList.add('correct');
+      if(a.selected===o.letter&&q.correct&&o.letter!==q.correct)el.classList.add('wrong');
+    }
+    el.innerHTML=`<span class="lt">${esc(o.letter)}</span><span class="otext">${esc(o.text)}</span>`+
+      (reveal?'':`<button class="elimbtn" title="Cross out">✕</button>`)+
+      (reveal&&q.correct&&o.letter===q.correct?'<span class="stat">✓ correct</span>':'');
+    if(!reveal){
+      el.querySelector('.otext').onclick=el.querySelector('.lt').onclick=()=>selectOpt(o.letter);
+      el.querySelector('.elimbtn').onclick=e=>{e.stopPropagation();toggleElim(o.letter);};
+    }
+    box.appendChild(el);
+  });
+}
+function selectOpt(letter){
+  const a=curA();if(a.submitted&&state.mode==='tutor')return;
+  if(a.selected!==letter){a.answerChanges.push({from:a.selected,to:letter,atMs:Math.round(a.activeMs+liveMs())});a.selected=letter;}
+  renderOptions(curQ(),a);renderNavMini();saveLiveState();
+}
+function toggleElim(letter){
+  const a=curA();const k=a.eliminated.indexOf(letter);
+  if(k>=0)a.eliminated.splice(k,1);else a.eliminated.push(letter);
+  renderOptions(curQ(),a);saveLiveState();
+}
+
+/* ---- highlight / strikethrough on stem ---- */
+let markMode=null; // 'hl' | 'st' | 'erase' | null
+function setMarkMode(m){markMode=(markMode===m)?null:m;
+  $('#hlBtn').classList.toggle('on',markMode==='hl');
+  $('#stBtn').classList.toggle('on',markMode==='st');
+  $('#eraseBtn').classList.toggle('on',markMode==='erase');
+}
+$('#hlBtn').onclick=()=>setMarkMode('hl');
+$('#stBtn').onclick=()=>setMarkMode('st');
+$('#eraseBtn').onclick=()=>setMarkMode('erase');
+
+$('#stem').addEventListener('mouseup',()=>{
+  if(state.reviewMode)return;
+  if(markMode==='hl')wrapSelection('hl');
+  else if(markMode==='st')wrapSelection('st');
+});
+function wrapSelection(cls){
+  const sel=window.getSelection();
+  if(!sel.rangeCount||sel.isCollapsed)return;
+  const range=sel.getRangeAt(0);
+  const stem=$('#stem');
+  if(!stem.contains(range.commonAncestorContainer))return;
+  const span=document.createElement('span');span.className=cls;
+  try{range.surroundContents(span);}
+  catch(e){const frag=range.extractContents();span.appendChild(frag);range.insertNode(span);}
+  sel.removeAllRanges();
+  persistMarks();bindMarkClicks();
+}
+function bindMarkClicks(){
+  $$('#stem .hl, #stem .st').forEach(m=>{
+    m.onclick=()=>{
+      if(state.reviewMode)return;
+      if(markMode==='erase'||true){ // clicking a mark always removes it
+        const parent=m.parentNode;while(m.firstChild)parent.insertBefore(m.firstChild,m);parent.removeChild(m);parent.normalize();
+        persistMarks();bindMarkClicks();
+      }
+    };
+  });
+}
+function persistMarks(){
+  const a=curA();const stem=$('#stem');
+  a.stemHTML=stem.innerHTML;
+  a.highlights=$$('#stem .hl').map(m=>m.textContent);
+  a.strikes=$$('#stem .st').map(m=>m.textContent);
+  saveLiveState();
+}
+
+/* ---- flag ---- */
+$('#flagBtn').onclick=()=>{const a=curA();a.flagged=!a.flagged;$('#flagBtn').classList.toggle('on',a.flagged);renderNavMini();saveLiveState();};
+
+/* ---- timer ---- */
+function liveMs(){if(state.tPaused)return 0;return Date.now()-state.tStart-(state.tPauseStart?Date.now()-state.tPauseStart:0);}
+function resetTimerDisplay(){const a=curA();state.tAccumMs=a.activeMs;}
+function startTimer(){
+  state.tPaused=false;state.tStart=Date.now();state.tPauseStart=0;
+  $('#pauseBtn').textContent='⏸ Pause';$('#timer').classList.remove('paused');
+  tick();
+}
+function tick(){
+  cancelAnimationFrame(state.raf);
+  const loop=()=>{
+    const a=curA();
+    const elapsed=state.tAccumMs+(state.tPaused?0:(Date.now()-state.tStart));
+    const remain=TIMER_SECONDS*1000-elapsed;
+    const tEl=$('#timer');
+    if(remain>=0){tEl.textContent=fmtTime(remain);tEl.classList.remove('warn');}
+    else{tEl.textContent='+'+fmtTime(-remain);tEl.classList.add('warn');a.expired=true;
+      if($('#autoAdvance')&&$('#autoAdvance').checked&&!a._autoAdv){a._autoAdv=true;nextQuestion();return;}
+    }
+    state.raf=requestAnimationFrame(loop);
+  };
+  loop();
+}
+function stopTimer(bank){
+  cancelAnimationFrame(state.raf);
+  const a=curA&&curQ()?curA():null;
+  if(a&&bank){
+    if(!state.tPaused)a.activeMs=state.tAccumMs+(Date.now()-state.tStart);
+    else a.activeMs=state.tAccumMs;
+  }
+}
+$('#pauseBtn').onclick=()=>{
+  const a=curA();
+  if(state.tPaused){ // resume
+    state.tPaused=false;state.tStart=Date.now();
+    $('#pauseBtn').textContent='⏸ Pause';$('#timer').classList.remove('paused');
+    tick();
+  }else{ // pause
+    state.tAccumMs=state.tAccumMs+(Date.now()-state.tStart);
+    a.activeMs=state.tAccumMs;
+    state.tPaused=true;
+    $('#pauseBtn').textContent='▶ Resume';$('#timer').classList.add('paused');
+    cancelAnimationFrame(state.raf);
+  }
+  saveLiveState();
+};
+
+/* ---- nav ---- */
+function renderNavMini(){
+  const box=$('#navMini');box.innerHTML='';
+  state.order.forEach((qi,k)=>{
+    const a=state.attempts[qi];const b=document.createElement('button');b.className='nb';
+    if(k===state.cur)b.classList.add('cur');
+    if(a.flagged)b.classList.add('flag');
+    else if(a.selected)b.classList.add('ans');
+    b.textContent=k+1;b.onclick=()=>loadQuestion(k);
+    box.appendChild(b);
+  });
+}
+function nextQuestion(){if(state.cur<state.order.length-1)loadQuestion(state.cur+1);else if(!state.reviewMode)endTest();}
+$('#nextBtn').onclick=nextQuestion;
+$('#prevBtn').onclick=()=>{if(state.cur>0)loadQuestion(state.cur-1);};
+$('#submitBtn').onclick=()=>{ // tutor mode
+  const q=curQ(),a=curA();
+  if(!a.selected){toast('Select an answer first');return;}
+  a.submitted=true;a.correctSelected=q.correct?(a.selected===q.correct):null;
+  stopTimer(true);
+  $('#submitBtn').classList.add('hidden');
+  renderOptions(q,a);showFeedback(q,a);saveLiveState();
+};
+function showFeedback(q,a){
+  const fb=$('#feedback');
+  const known=!!q.correct;
+  const good=a.correctSelected===true;
+  let v=!known?'<span class="verdict">Your answer: '+(a.selected||'—')+'</span>'
+    :good?'<span class="verdict good">Correct</span>'
+    :'<span class="verdict bad">Incorrect — you chose '+(a.selected||'—')+', answer is '+q.correct+'</span>';
+  fb.innerHTML='<div class="box">'+v+(q.explanation?'<div class="expl">'+esc(q.explanation)+'</div>':'<div class="note">No explanation in the PDF for this item.</div>')+'</div>';
+  fb.classList.remove('hidden');
+}
+
+/* ---- lab values & calculator ---- */
+$('#labBtn').onclick=()=>openLabs();
+$('#calcBtn').onclick=()=>openCalc();
+const LAB_VALUES=[
+  {sec:'Serum / Plasma — Chemistry', rows:[
+    ['Alanine aminotransferase (ALT)','10–40 U/L'],
+    ['Aspartate aminotransferase (AST)','12–38 U/L'],
+    ['Alkaline phosphatase','25–100 U/L'],
+    ['Amylase','25–125 U/L'],
+    ['Lipase','14–280 U/L'],
+    ['Bilirubin, total','0.1–1.0 mg/dL'],
+    ['Bilirubin, direct','0.0–0.3 mg/dL'],
+    ['Calcium','8.4–10.2 mg/dL'],
+    ['Cholesterol, total','Rec: <200 mg/dL'],
+    ['Cholesterol, HDL','40–60 mg/dL'],
+    ['Cholesterol, LDL','Rec: <160 mg/dL'],
+    ['Triglycerides','<150 mg/dL'],
+    ['Cortisol','0800 h: 5–23 µg/dL; 1600 h: 3–15 µg/dL'],
+    ['Creatine kinase (CK)','M 25–90 U/L; F 10–70 U/L'],
+    ['Creatinine','0.6–1.2 mg/dL'],
+    ['Urea nitrogen (BUN)','7–18 mg/dL'],
+    ['Sodium (Na⁺)','136–146 mEq/L'],
+    ['Potassium (K⁺)','3.5–5.0 mEq/L'],
+    ['Chloride (Cl⁻)','95–105 mEq/L'],
+    ['Bicarbonate (HCO₃⁻)','22–28 mEq/L'],
+    ['Magnesium (Mg²⁺)','1.5–2.0 mEq/L'],
+    ['Phosphorus (inorganic)','3.0–4.5 mg/dL'],
+    ['Ferritin','M 20–250 ng/mL; F 10–120 ng/mL'],
+    ['Iron','50–170 µg/dL'],
+    ['Total iron-binding capacity (TIBC)','250–400 µg/dL'],
+    ['Transferrin','200–360 mg/dL'],
+    ['Glucose, fasting','70–100 mg/dL'],
+    ['Glucose, random','≤140 mg/dL'],
+    ['Growth hormone, fasting','<5 ng/mL'],
+    ['Osmolality','275–295 mOsmol/kg H₂O'],
+    ['Parathyroid hormone (PTH)','10–60 pg/mL'],
+    ['Prolactin','M <17 ng/mL; F <25 ng/mL'],
+    ['Proteins, total','6.0–7.8 g/dL'],
+    ['Albumin','3.5–5.5 g/dL'],
+    ['Globulin','2.3–3.5 g/dL'],
+    ['TSH','0.4–4.0 µU/mL'],
+    ['Thyroxine (T₄), total','5–12 µg/dL'],
+    ['Thyroxine (T₄), free','0.9–1.7 ng/dL'],
+    ['Triiodothyronine (T₃), total','100–200 ng/dL'],
+    ['T₃ resin uptake','25–35%'],
+    ['Uric acid','3.0–8.2 mg/dL'],
+    ['Troponin I','≤0.04 ng/mL'],
+    ['Lactate','0.5–2.2 mmol/L'],
+    ['FSH','M 4–25 mIU/mL; F 4–30 (peak 10–90; postmenopausal 40–250)'],
+    ['LH','M 6–23 mIU/mL; F 5–30 (midcycle peak 75–150)'],
+  ]},
+  {sec:'Arterial Blood Gas (room air)', rows:[
+    ['pH','7.35–7.45'],
+    ['PCO₂','33–45 mmHg'],
+    ['PO₂','75–105 mmHg'],
+  ]},
+  {sec:'Cerebrospinal Fluid (CSF)', rows:[
+    ['Cell count','0–5/mm³'],
+    ['Glucose','40–70 mg/dL'],
+    ['Proteins, total','<40 mg/dL'],
+    ['Chloride','118–132 mEq/L'],
+    ['Gamma globulin','3%–12% of total proteins'],
+    ['Pressure','70–180 mm H₂O'],
+  ]},
+  {sec:'Hematologic', rows:[
+    ['Hemoglobin','M 13.5–17.5 g/dL; F 12.0–16.0 g/dL'],
+    ['Hematocrit','M 41%–53%; F 36%–46%'],
+    ['Hemoglobin A1c','≤6%'],
+    ['Erythrocyte (RBC) count','M 4.3–5.9; F 3.5–5.5 ×10⁶/mm³'],
+    ['Leukocyte (WBC) count','4,500–11,000/mm³'],
+    ['  Segmented neutrophils','54%–62%'],
+    ['  Bands','3%–5%'],
+    ['  Eosinophils','1%–3%'],
+    ['  Basophils','0%–0.75%'],
+    ['  Lymphocytes','25%–33%'],
+    ['  Monocytes','3%–7%'],
+    ['CD4⁺ T-lymphocyte count','≥500/mm³'],
+    ['Platelet count','150,000–400,000/mm³'],
+    ['Reticulocyte count','0.5%–1.5% of RBCs'],
+    ['MCV','80–100 µm³'],
+    ['MCH','25–35 pg/cell'],
+    ['MCHC','31%–36% Hb/cell'],
+    ['ESR (Westergren)','M 0–15; F 0–20 mm/h'],
+    ['Bleeding time','2–7 minutes'],
+    ['Prothrombin time (PT)','11–15 seconds'],
+    ['Partial thromboplastin time (PTT)','25–40 seconds'],
+    ['D-dimer','≤250 ng/mL'],
+    ['Hemoglobin, plasma','1–4 mg/dL'],
+    ['Volume, plasma','M 25–43; F 28–45 mL/kg'],
+    ['Volume, red cell','M 20–36; F 19–31 mL/kg'],
+  ]},
+  {sec:'Urine & Other', rows:[
+    ['Creatinine clearance','M 97–137; F 88–128 mL/min'],
+    ['Osmolality','50–1200 mOsmol/kg H₂O'],
+    ['Proteins, total','<150 mg/24 h'],
+    ['Calcium','100–300 mg/24 h'],
+    ['17-Hydroxycorticosteroids','M 3.0–10.0; F 2.0–8.0 mg/24 h'],
+    ['17-Ketosteroids, total','M 8–20; F 6–15 mg/24 h'],
+    ['Body mass index (BMI)','Adult: 19–25 kg/m²'],
+  ]},
+];
+function labListHTML(filter){
+  const f=(filter||'').trim().toLowerCase();
+  let html='',any=false;
+  for(const g of LAB_VALUES){
+    const rows=g.rows.filter(r=>!f||(r[0]+' '+r[1]).toLowerCase().includes(f));
+    if(!rows.length)continue; any=true;
+    html+='<div class="labsec">'+esc(g.sec)+'</div><table class="labtbl"><tbody>'+
+      rows.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>').join('')+'</tbody></table>';
+  }
+  if(!any)html+='<p class="note">No lab matches “'+esc(filter)+'”.</p>';
+  html+='<p class="note" style="margin-top:10px">USMLE/NBME reference ranges — always defer to values given in the question.</p>';
+  return html;
+}
+function openLabs(){
+  openModal('Lab values — USMLE reference','<input type="text" id="labSearch" placeholder="Search a lab (sodium, AST, platelet, CD4…)" style="margin-bottom:6px"><div id="labList"></div>');
+  const list=$('#labList'); if(list)list.innerHTML=labListHTML('');
+  const inp=$('#labSearch'); if(inp)inp.oninput=()=>{const l=$('#labList');if(l)l.innerHTML=labListHTML(inp.value);};
+}
+function openCalc(){
+  openModal('Calculator,'.replace(',',''), `<input type="text" id="calcDisp" value="0" readonly>
+    <div class="calcgrid">
+      ${['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}
+      <button data-k="C" style="grid-column:span 2">C</button>
+      <button data-k="←" style="grid-column:span 2">←</button>
+    </div>`);
+  let expr='';const disp=$('#calcDisp');
+  $$('#modalRoot [data-k]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.k;
+    if(k==='C'){expr='';}
+    else if(k==='←'){expr=expr.slice(0,-1);}
+    else if(k==='='){try{expr=String(safeEval(expr));}catch(e){expr='Err';}}
+    else expr+=k;
+    disp.value=expr||'0';
+  });
+}
+function safeEval(e){if(!/^[0-9+\-*/. ()]*$/.test(e))throw'bad';return Function('"use strict";return ('+e+')')();}
+
+/* ---- modal ---- */
+function openModal(title,html){
+  $('#modalRoot').innerHTML=`<div class="modalbg"><div class="modal"><div class="mh">${esc(title)}<div class="spacer" style="flex:1"></div><button class="iconbtn" id="mClose">Close</button></div><div class="mb">${html}</div></div></div>`;
+  $('#mClose').onclick=closeModal;
+  $('#modalRoot .modalbg').onclick=e=>{if(e.target.classList.contains('modalbg'))closeModal();};
+}
+function closeModal(){$('#modalRoot').innerHTML='';}
+
+/* =========================================================================
+   5. END TEST → RESULTS
+   ========================================================================= */
+$('#endBtn').onclick=()=>{
+  if(!confirm('End the test and see results?'))return;
+  endTest();
+};
+function endTest(){
+  stopTimer(true);
+  // finalize correctness for all
+  state.questions.forEach((q,i)=>{
+    const a=state.attempts[i];
+    if(a.correctSelected===null&&q.correct&&a.selected)a.correctSelected=(a.selected===q.correct);
+  });
+  const session=buildSession();
+  state.curSession=session;
+  // persist (strip images if storage is too full)
+  saveSessionSafe(session);
+  renderResults(session);
+  showScreen('results');
+  saveLiveState();
+}
+function saveSessionSafe(session){
+  // History keeps stats/answers/marks but not heavy image bytes, so it can't fill storage
+  const lean=Object.assign({},session,{questions:session.questions.map(q=>Object.assign({},q,{images:[],hadImage:!!(q.images&&q.images.length)}))});
+  let all=loadJSON(LS.sessions,[]);all.unshift(lean);all=all.slice(0,40);
+  try{localStorage.setItem(LS.sessions,JSON.stringify(all));}
+  catch(e){
+    try{localStorage.setItem(LS.sessions,JSON.stringify(all.slice(0,10)));}
+    catch(e2){toast('History storage is full.');}
+  }
+}
+function buildSession(){
+  return {
+    id:uid(), name:state.pdfName||'Untitled', createdAt:Date.now(),
+    mode:state.mode, timerSeconds:TIMER_SECONDS,
+    questions:state.questions.map(q=>({number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:q.images||[]})),
+    order:state.order.slice(),
+    attempts:state.attempts.map(a=>({
+      selected:a.selected, correctSelected:a.correctSelected,
+      activeMs:Math.round(a.activeMs), pausedMs:Math.round(a.pausedMs||0),
+      visits:a.visits, answerChanges:a.answerChanges, eliminated:a.eliminated,
+      flagged:a.flagged, expired:a.expired, highlights:a.highlights, strikes:a.strikes
+    }))
+  };
+}
+
+function renderResults(s){
+  const N=s.order.length;
+  let correct=0,wrong=0,omit=0,graded=0,totMs=0,over=0,flags=0;
+  s.order.forEach(qi=>{
+    const a=s.attempts[qi],q=s.questions[qi];
+    totMs+=a.activeMs;if(a.expired)over++;if(a.flagged)flags++;
+    if(q.correct){graded++;if(!a.selected)omit++;else if(a.correctSelected)correct++;else wrong++;}
+    else if(!a.selected)omit++;
+  });
+  const pct=graded?Math.round(100*correct/graded):0;
+  const avg=N?totMs/N:0;
+  $('#kpis').innerHTML=[
+    ['Score',graded?pct+'%':'—',graded?(correct+'/'+graded+' graded'):'no answer key'],
+    ['Correct',correct,''],['Incorrect',wrong,''],['Omitted',omit,''],
+    ['Avg / question',fmtTime(avg),'target 1:30'],['Over 1:30',over,'questions'],
+    ['Flagged',flags,''],['Total time',fmtTime(totMs),'']
+  ].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}${k[2]?' · '+k[2]:''}</span></div>`).join('');
+
+  // review table
+  const t=$('#revTable');
+  t.innerHTML='<tr><th>#</th><th>Your ans</th><th>Correct</th><th>Result</th><th>Time</th><th>Marks</th><th>Eliminated</th></tr>'+
+    s.order.map((qi,k)=>{
+      const a=s.attempts[qi],q=s.questions[qi];
+      const res=!q.correct?'<span class="tag om">ungraded</span>':!a.selected?'<span class="tag om">omitted</span>':a.correctSelected?'<span class="tag ok">correct</span>':'<span class="tag no">wrong</span>';
+      const marks=(a.highlights.length?'🖊'+a.highlights.length+' ':'')+(a.strikes.length?'—'+a.strikes.length:'');
+      return `<tr><td>${k+1}${a.flagged?' ⚑':''}${(q.images&&q.images.length)?' 🖼':''}</td><td>${esc(a.selected||'—')}</td><td>${esc(q.correct||'—')}</td><td>${res}</td><td>${fmtTime(a.activeMs)}${a.expired?' ⚠':''}</td><td>${marks||'—'}</td><td>${esc(a.eliminated.join(', ')||'—')}</td></tr>`;
+    }).join('');
+  $('#analysisOut').innerHTML='';
+}
+
+$('#exportSession').onclick=()=>{
+  const s=state.curSession;if(!s){toast('No session');return;}
+  download(s.name.replace(/\.pdf$/i,'')+'-session.json',JSON.stringify(s,null,2));
+};
+function download(name,text){
+  const b=new Blob([text],{type:'application/json'});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+}
+
+/* ---- export / import a whole test (questions + progress) so it survives moving between app versions ---- */
+function exportTest(){
+  if(!state.questions.length){toast('Nothing to export yet');return;}
+  bankTimer();
+  const payload={kind:'qbank-test',v:1,exportedAt:Date.now(),pdfName:state.pdfName,
+    options:collectOptions(), questions:state.questions,
+    progress:{order:state.order,cur:state.cur,attempts:state.attempts,mode:state.mode,startedAt:state.startedAt,
+      inExam:(state.screen==='exam')}};
+  download((state.pdfName||'qbank-test').replace(/\.pdf$/i,'')+'.qbank.json',JSON.stringify(payload));
+  toast('Saved your test to a file');
+}
+function importTest(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    let d=null;try{d=JSON.parse(r.result);}catch(e){}
+    if(!d||!Array.isArray(d.questions)||!d.questions.length){toast('That file is not a saved test');return;}
+    state.questions=d.questions;state.questions.forEach((q,i)=>{q.id=q.id||uid();q.idx=i;q.images=q.images||[];});
+    state.pdfName=d.pdfName||'Imported test';applyOptions(d.options);
+    saveLiveQ();
+    const p=d.progress;
+    if(p&&p.inExam&&Array.isArray(p.order)&&Array.isArray(p.attempts)){
+      state.order=p.order;state.attempts=p.attempts;state.cur=Math.min(p.cur||0,p.order.length-1);
+      state.mode=p.mode||'test';state.startedAt=p.startedAt||Date.now();state.reviewMode=false;
+      showScreen('exam');loadQuestion(state.cur);toast('Test imported — resumed where you left off');
+    }else{
+      renderReview();state.screen='review';saveLiveState();showScreen('review');toast('Test imported');
+    }
+  };
+  r.readAsText(file);
+}
+$('#exportTestBtn')&&($('#exportTestBtn').onclick=exportTest);
+$('#exportTestBtn2')&&($('#exportTestBtn2').onclick=exportTest);
+$('#importBtn')&&($('#importBtn').onclick=()=>$('#importFile').click());
+$('#importFile')&&($('#importFile').onchange=e=>{if(e.target.files[0])importTest(e.target.files[0]);e.target.value='';});
+
+/* =========================================================================
+   6. ANALYZE WITH CLAUDE
+   ========================================================================= */
+$('#analyzeBtn').onclick=async()=>{
+  const s=state.curSession;if(!s){toast('No session');return;}
+  if(!settings.apiKey){toast('Add your API key in Settings');showScreen('settings');return;}
+  const out=$('#analysisOut');out.innerHTML='<span class="spin"></span> Claude is reviewing your session …';
+  try{
+    const payload=analysisPayload(s);
+    const sys="You are an expert tutor for high-stakes multiple-choice board exams. You are given one student's full test session: for each question you see the verbatim stem and options, the correct answer, what the student selected, how long they spent (target is 90s), whether they ran over, every phrase they HIGHLIGHTED, every phrase they STRUCK THROUGH, which options they crossed out (eliminated), their answer-change history, and flags. "+
+      "Produce a tight, actionable study outline that gives them the biggest score gain for the least time. Be specific and reference concrete questions by number. Use Markdown with these sections: "+
+      "## Bottom line (2-3 sentences) ## Confused concepts (what they mixed up — infer from wrong picks, bad eliminations, and what they highlighted) ## Timing & test-taking (where they bled time or rushed; over/under 1:30) ## Highlighting & elimination patterns (are they highlighting the right anchors? eliminating correct answers?) ## Highest-yield fixes (ranked checklist, most impactful first) ## 7-day plan (concise). "+
+      "Do not pad. Prioritize ruthlessly.";
+    const resp=await anthropic(settings.analysisModel,sys,[{role:'user',content:JSON.stringify(payload)}],4000);
+    out.innerHTML=mdToHtml(resp);
+    // save analysis on session
+    s.analysis=resp;const all=loadJSON(LS.sessions,[]);const idx=all.findIndex(x=>x.id===s.id);if(idx>=0){all[idx]=s;saveJSON(LS.sessions,all);}
+  }catch(err){console.error(err);out.innerHTML='<span style="color:var(--bad)">Analysis failed: '+esc(err.message)+'</span>';}
+};
+function analysisPayload(s){
+  return {
+    target_seconds_per_question:s.timerSeconds, mode:s.mode,
+    items:s.order.map((qi,k)=>{
+      const a=s.attempts[qi],q=s.questions[qi];
+      return {
+        n:k+1, stem:q.stem, options:q.options, correct:q.correct,
+        has_medical_image:!!(q.images&&q.images.length),
+        selected:a.selected, was_correct:a.correctSelected,
+        seconds_spent:+(a.activeMs/1000).toFixed(1), over_time:a.expired,
+        highlighted:a.highlights, struck_through:a.strikes, eliminated:a.eliminated,
+        answer_changes:a.answerChanges.map(c=>({from:c.from,to:c.to})), flagged:a.flagged
+      };
+    })
+  };
+}
+
+/* ---- minimal markdown ---- */
+function mdToHtml(md){
+  const lines=md.replace(/\r/g,'').split('\n');let html='',inUl=false,inOl=false;
+  const inline=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>').replace(/\*(.+?)\*/g,'<em>$1</em>');
+  const closeLists=()=>{if(inUl){html+='</ul>';inUl=false;}if(inOl){html+='</ol>';inOl=false;}};
+  for(let ln of lines){
+    let m;
+    if(/^\s*$/.test(ln)){closeLists();continue;}
+    if((m=/^###\s+(.*)/.exec(ln))){closeLists();html+='<h3>'+inline(m[1])+'</h3>';continue;}
+    if((m=/^##\s+(.*)/.exec(ln))){closeLists();html+='<h2>'+inline(m[1])+'</h2>';continue;}
+    if((m=/^#\s+(.*)/.exec(ln))){closeLists();html+='<h1>'+inline(m[1])+'</h1>';continue;}
+    if(/^---+$/.test(ln)){closeLists();html+='<hr>';continue;}
+    if((m=/^\s*[-*]\s+(.*)/.exec(ln))){if(!inUl){closeLists();html+='<ul>';inUl=true;}html+='<li>'+inline(m[1])+'</li>';continue;}
+    if((m=/^\s*\d+[\.\)]\s+(.*)/.exec(ln))){if(!inOl){closeLists();html+='<ol>';inOl=true;}html+='<li>'+inline(m[1])+'</li>';continue;}
+    closeLists();html+='<p>'+inline(ln)+'</p>';
+  }
+  closeLists();return html;
+}
+
+/* =========================================================================
+   7. HISTORY
+   ========================================================================= */
+function renderHistory(){
+  const all=loadJSON(LS.sessions,[]);const box=$('#historyList');
+  if(!all.length){box.innerHTML='<p class="note">No saved sessions yet.</p>';return;}
+  box.innerHTML=all.map(s=>{
+    const N=s.order.length;let c=0,g=0;s.order.forEach(qi=>{const a=s.attempts[qi],q=s.questions[qi];if(q.correct){g++;if(a.correctSelected)c++;}});
+    const d=new Date(s.createdAt);
+    return `<div class="card pad" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px"><b>${esc(s.name)}</b><div class="note">${d.toLocaleString()} · ${N} items · ${g?Math.round(100*c/g)+'%':'ungraded'} · ${s.mode}${s.analysis?' · analyzed':''}</div></div>
+      <button class="btn sm" data-redo="${s.id}">Redo</button>
+      <button class="btn ghost sm" data-open="${s.id}">Open</button>
+      <button class="btn ghost sm" data-del="${s.id}">Delete</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openSession(b.dataset.open));
+  box.querySelectorAll('[data-redo]').forEach(b=>b.onclick=()=>redoSession(b.dataset.redo));
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    if(!confirm('Delete this session?'))return;
+    const all=loadJSON(LS.sessions,[]).filter(x=>x.id!==b.dataset.del);saveJSON(LS.sessions,all);renderHistory();
+  });
+}
+function redoSession(id){
+  const s=loadJSON(LS.sessions,[]).find(x=>x.id===id);if(!s)return;
+  const hasLive=!!localStorage.getItem(LS.liveQ);
+  if(hasLive && !confirm('Load this test for a fresh attempt? This replaces the test currently loaded in the app (use ⤓ Save file first if you want to keep it).'))return;
+  // load the questions as a brand-new test; attempts are reset when you press Start
+  state.questions=s.questions.map((q,i)=>({id:uid(),idx:i,number:q.number,stem:q.stem,
+    options:q.options,correct:q.correct,explanation:q.explanation,images:q.images||[]}));
+  state.pdfName=s.name||'Redo';
+  state.order=[];state.attempts=[];state.curSession=null;state.reviewMode=false;
+  if(s.mode)$('#testMode').value=s.mode;
+  saveLiveQ();
+  renderReview();
+  state.screen='review';saveLiveState();
+  showScreen('review');
+  const hadImg=s.questions.some(q=>(q.images&&q.images.length)||q.hadImage);
+  toast(hadImg?'Loaded for a fresh attempt — set your range and Start (figures aren\u2019t stored in history)':'Loaded for a fresh attempt — set your range and Start');
+}
+function openSession(id){
+  const s=loadJSON(LS.sessions,[]).find(x=>x.id===id);if(!s)return;
+  state.curSession=s;
+  renderResults(s);
+  if(s.analysis)$('#analysisOut').innerHTML=mdToHtml(s.analysis);
+  showScreen('results');
+}
+
+/* =========================================================================
+   init
+   ========================================================================= */
+applySettingsToUI();
+$('#heroStart')&&($('#heroStart').onclick=()=>{const d=$('#drop');if(d)d.scrollIntoView({behavior:'smooth',block:'center'});});
+if(!tryResume())showScreen('setup');
+</script>
+</body>
+</html>
