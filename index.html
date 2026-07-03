@@ -512,6 +512,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
 <section id="screen-history" class="app hidden">
   <div class="h1">History</div>
   <p class="sub" id="historySub">Saved on this computer only. Sign in to sync your tests to your account.</p>
+  <div class="row" style="margin:0 0 14px"><button class="btn ghost sm" id="exportHistory" title="Download every saved test — questions, your answers, timing and marks — as one JSON file">⤓ Download all history (JSON)</button></div>
   <div id="historyList"></div>
   <div class="row" style="margin:16px 0 40px"><button class="btn ghost" id="backHome2">Back</button></div>
 </section>
@@ -1954,6 +1955,21 @@ function renderHistory(){
     renderHistory();
   });
 }
+$('#exportHistory').onclick=async()=>{
+  let all=loadJSON(LS.sessions,[]);
+  if(fbEnabled&&curUser){ // pull the account's cloud copies too, in case this device is behind
+    try{
+      const snap=await fbDb.collection('sessions').where('uid','==',curUser.uid).get();
+      const byId={};all.forEach(s=>byId[s.id]=s);snap.docs.forEach(d=>{const s=d.data();byId[s.id]=s;});
+      all=Object.values(byId);
+    }catch(e){console.warn('Cloud fetch failed, exporting local copy only:',e);}
+  }
+  if(!all.length){toast('No saved sessions yet');return;}
+  all=all.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  download('qbank-history-'+new Date().toISOString().slice(0,10)+'.json',
+    JSON.stringify({kind:'qbank-history',v:1,exportedAt:Date.now(),count:all.length,sessions:all},null,2));
+  toast('Downloaded '+all.length+' session'+(all.length>1?'s':''));
+};
 function redoSession(id){
   const s=loadJSON(LS.sessions,[]).find(x=>x.id===id);if(!s)return;
   const hasLive=!!localStorage.getItem(LS.liveQ);
