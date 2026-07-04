@@ -129,15 +129,18 @@ a{color:var(--accent-d)}
 .stem p:last-child{margin-bottom:0}
 .stem .hl{background:var(--mark);border-radius:2px;padding:0 1px;box-decoration-break:clone}
 .stem .st{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--bad);opacity:.7}
-.labwrap{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--accent);
-  border-radius:8px;padding:10px 16px;margin:4px 0 15px;display:inline-block;min-width:min(340px,100%);max-width:100%;overflow-x:auto}
-.labtable{border-collapse:collapse;font-size:14.5px;width:100%}
-.labtable td{padding:4px 22px 4px 0;vertical-align:baseline;white-space:nowrap}
-.labtable td:last-child{padding-right:0}
-.labtable td.lk{color:var(--muted)}
-.labtable td.lv{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:left}
-.labtable td.lh{font-weight:700;color:var(--ink);padding-top:9px}
-.labtable tr.subgroup td.lk{padding-left:16px}
+.labwrap{background:var(--soft);border:1px solid var(--line);border-radius:10px;
+  padding:11px 14px;margin:14px 0 16px;max-width:520px;overflow-x:auto}
+.labhead{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-d);
+  margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.labtable{border-collapse:collapse;font-size:14px;width:100%}
+.labtable td{padding:3px 0;vertical-align:baseline}
+.labtable td.lk{color:var(--muted);padding-right:20px;white-space:normal}
+.labtable td.lv{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:left;white-space:nowrap;padding-right:16px}
+.labtable td.lr{font-family:var(--mono);font-size:12.5px;color:var(--muted);text-align:left;white-space:nowrap}
+.labtable td.lh{font-weight:700;color:var(--ink);padding-top:11px;padding-bottom:3px}
+.labtable tr:first-child td.lh{padding-top:2px}
+.labtable tr.subgroup td.lk{padding-left:14px}
 .leadin{font-weight:600;margin-top:14px}
 .opts{max-width:880px;margin:16px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:6px}
 .opt{display:flex;align-items:flex-start;gap:12px;border:1px solid transparent;border-radius:12px;padding:11px 12px;
@@ -375,8 +378,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
       <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="autoAdvance"> Auto-advance when 1:30 runs out</label>
     </div>
     <div style="margin-top:8px" class="row">
-      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="grabImages" checked> Pull medical images from the PDF into their question</label>
-      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="verifyImages"> Double-check each image is medical with Claude vision (slower)</label>
+      <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="grabImages" checked> Include pictures from the PDF in their question <span class="note">(figures are attached as-is — no AI analysis)</span></label>
     </div>
     <p class="note" style="margin-top:10px">Per-question timer is fixed at <b>1:30 (90s)</b> with a pause button on every question, as you asked. Your extracted questions and test progress are saved in this browser automatically — refreshing or hitting Back won't lose them. Scanned/image PDFs have no selectable text — if extraction comes back empty, use a text-based PDF or an OCR tool first.</p>
   </div>
@@ -811,13 +813,13 @@ $('#backHome2').onclick=$('#backHome3').onclick=$('#backHome4').onclick=()=>back
 function collectOptions(){return {
   extractMethod:$('#extractMethod').value, testMode:$('#testMode').value,
   shuffle:$('#shuffle').checked, autoAdvance:$('#autoAdvance').checked,
-  grabImages:$('#grabImages').checked, verifyImages:$('#verifyImages').checked
+  grabImages:$('#grabImages').checked
 };}
 function applyOptions(o){ if(!o)return;
   if(o.extractMethod)$('#extractMethod').value=o.extractMethod;
   if(o.testMode)$('#testMode').value=o.testMode;
   $('#shuffle').checked=!!o.shuffle; $('#autoAdvance').checked=!!o.autoAdvance;
-  $('#grabImages').checked=o.grabImages!==false; $('#verifyImages').checked=o.verifyImages!==false;
+  $('#grabImages').checked=o.grabImages!==false;
 }
 function bankTimer(){ // write current question's active time into its attempt (no UI change)
   if(state.reviewMode||!state.order||!state.order.length)return;
@@ -957,12 +959,12 @@ $('#extractBtn').onclick=async()=>{
     if(!qs.length){st.innerHTML='No questions detected. Try the other extraction method, or check the PDF.';$('#extractBtn').disabled=false;return;}
     qs.forEach((q,i)=>{q.id=q.id||uid();q.idx=i;q.images=q.images||[];});
     state.questions=qs;
-    // medical images
+    // pictures — attach any figure found next to its question (no AI analysis)
     if($('#grabImages').checked&&state.pdfDoc){
       try{
-        st.innerHTML='<span class="spin"></span> Finding images in the PDF …';
-        await attachImages(state.pdfDoc,qs,$('#verifyImages').checked,m=>st.innerHTML='<span class="spin"></span> '+m);
-      }catch(imgErr){console.error('image step',imgErr);toast('Image extraction had trouble — questions are fine, images skipped.');}
+        st.innerHTML='<span class="spin"></span> Finding pictures in the PDF …';
+        await attachImages(state.pdfDoc,qs,m=>st.innerHTML='<span class="spin"></span> '+m);
+      }catch(imgErr){console.error('image step',imgErr);toast('Picture extraction had trouble — questions are fine, pictures skipped.');}
     }
     renderReview();
     saveLiveQ();saveLiveState();
@@ -1021,7 +1023,7 @@ function chunkText(text,size=12000){
 async function claudeExtract(text,onProg){
   const chunks=chunkText(text);
   let done=0;
-  const sys="You extract EXISTING exam questions from a document. Copy text EXACTLY, verbatim, character for character — including every answer choice. Do NOT paraphrase, summarize, fix typos, translate, or invent anything. Preserve the original line breaks. For laboratory or other tabular data, keep each row on its own line and KEEP the run of spaces that separates a label from its value (e.g. 'Sodium    140 mEq/L') — never collapse a table into a paragraph. Only include items that are clearly multiple-choice questions present in the text. Identify the correct answer ONLY if the text explicitly indicates it (answer key, 'Answer: X', bolded/marked choice, or an explanation that states it); otherwise use null. Capture an explanation only if one is literally present in the text. Output ONLY JSON.";
+  const sys="You extract EXISTING exam questions from a document. Copy text EXACTLY, verbatim, character for character — including every answer choice. Do NOT paraphrase, summarize, fix typos, translate, or invent anything. Preserve the original line breaks. For laboratory or other tabular data, put EACH test on its OWN line as 'Test name<two spaces>value' (and, if the document gives a reference range, two more spaces then the range) — one test per line, NEVER a comma-separated sentence and never collapsed into a paragraph. Keep any lead-in such as 'Laboratory studies show:' on its own line just above the list. Only include items that are clearly multiple-choice questions present in the text. Identify the correct answer ONLY if the text explicitly indicates it (answer key, 'Answer: X', bolded/marked choice, or an explanation that states it); otherwise use null. Capture an explanation only if one is literally present in the text. Output ONLY JSON.";
   const schema='Return JSON exactly like: {"questions":[{"number":"<original number or empty>","stem":"<verbatim question vignette + lead-in>","options":[{"letter":"A","text":"<verbatim>"}],"correct":"A or null","explanation":"<verbatim or empty>"}]}';
   // 5 chunks at a time — big speed-up vs one-at-a-time, order preserved
   const arrays=await pMapLimit(chunks,5,async(chunk)=>{
@@ -1137,10 +1139,10 @@ async function extractPageImages(page){
   const pageW=viewport.width,pageH=viewport.height;
   let kept=boxes.filter(b=>{
     const w=b.x1-b.x0,h=b.y1-b.y0,pw=w/IMG_SCALE,ph=h/IMG_SCALE;
-    if(pw<28||ph<28)return false;                 // icons / bullets
+    if(pw<26||ph<26)return false;                 // icons / bullets
     if(w>=0.95*pageW&&h>=0.95*pageH)return false; // full-page background / scan
-    if(b.y1<pageH*0.07)return false;              // header band
-    if(b.y0>pageH*0.95)return false;              // footer band
+    if(b.y1<pageH*0.05)return false;              // header band
+    if(b.y0>pageH*0.96)return false;              // footer band
     return true;
   });
   kept=mergeBoxes(kept,6*IMG_SCALE);
@@ -1159,59 +1161,49 @@ async function extractPageImages(page){
   images.sort((a,b)=>a.yTop-b.yTop);
   return {anchors,images};
 }
-async function attachImages(pdf,questions,verify,onProg){
-  const byNum={};            // question number -> [dataURL]
-  const ordered=[];          // images in reading order for positional fallback
-  let carry=null;            // last question number seen across page boundary
+/* Attach every figure found in the PDF to its question — positionally, no AI analysis.
+   Each image belongs to the question-start that most recently precedes it (reading order).
+   That PDF question number is then matched to an extracted question by its original
+   number when available, otherwise by ordinal position, so pictures reliably land in
+   the right item even when the numbering doesn't line up. */
+async function attachImages(pdf,questions,onProg){
+  const ordered=[];        // {num, dataURL} in reading order (num = nearest question-start above)
+  const anchorOrder=[];    // distinct PDF question-start numbers, in reading order
+  let carry=null;          // last question-start number seen, carried across page boundaries
   for(let p=1;p<=pdf.numPages;p++){
-    onProg&&onProg('Scanning page '+p+' / '+pdf.numPages+' for images …');
+    onProg&&onProg('Scanning page '+p+' / '+pdf.numPages+' for pictures …');
     const page=await pdf.getPage(p);
     const {anchors,images}=await extractPageImages(page);
-    // sweep this page by y, assigning each image to the nearest question-start above it
     const events=[];
     anchors.forEach(a=>events.push({y:a.y,kind:'a',num:a.num}));
     images.forEach(im=>events.push({y:im.yTop,kind:'i',dataURL:im.dataURL}));
     events.sort((x,y)=>x.y-y.y||(x.kind==='a'?-1:1));
     for(const ev of events){
-      if(ev.kind==='a')carry=ev.num;
-      else{const n=carry;(byNum[n]=byNum[n]||[]).push(ev.dataURL);ordered.push({num:n,dataURL:ev.dataURL});}
+      if(ev.kind==='a'){carry=ev.num;if(anchorOrder[anchorOrder.length-1]!==ev.num)anchorOrder.push(ev.num);}
+      else ordered.push({num:carry,dataURL:ev.dataURL});
     }
   }
-  // verify medical with vision (optional)
-  let allow=null;
-  if(verify&&settings.apiKey&&ordered.length){
-    try{onProg&&onProg('Checking '+ordered.length+' image(s) are medical …');
-      allow=await visionFilter(ordered.map(o=>o.dataURL),onProg);
-    }catch(e){console.error('vision',e);allow=null;}
-  }
-  // build a per-question pull, honoring the allow-list
-  const finalByNum={};
-  ordered.forEach((o,i)=>{if(allow&&allow[i]===false)return;(finalByNum[o.num]=finalByNum[o.num]||[]).push(o.dataURL);});
-  const anyNumbers=questions.some(q=>parseInt(q.number,10)>0);
-  if(anyNumbers&&Object.keys(finalByNum).length){
-    questions.forEach(q=>{const n=parseInt(q.number,10);if(finalByNum[n])q.images=finalByNum[n].slice();});
-  }else{
-    // positional fallback: distribute image groups (in reading order) to questions in order
-    const keys=Object.keys(finalByNum);
-    keys.forEach((k,idx)=>{if(questions[idx])questions[idx].images=finalByNum[k].slice();});
-  }
-}
-async function visionFilter(dataURLs,onProg){
-  const result=new Array(dataURLs.length).fill(true);
-  const B=8;const batches=[];
-  for(let s=0;s<dataURLs.length;s+=B)batches.push({s,urls:dataURLs.slice(s,s+B)});
-  let done=0;
-  await pMapLimit(batches,3,async(b)=>{
-    const content=[{type:'text',text:'For each image below, in order, decide if it is a MEDICAL image that would belong to an exam question — e.g. radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, histology or microscopy, gram stain, gross pathology, clinical/dermatology/fundus photo, or a medical diagram/figure. Logos, headers, footers, icons, watermarks, decorative graphics, or plain UI chrome are NOT medical. Reply with ONLY a JSON array of true/false, one per image, same order. Example: [true,false,true]'}];
-    b.urls.forEach(u=>{const m=/^data:(.*?);base64,(.*)$/.exec(u);if(m)content.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});});
-    try{
-      const resp=await anthropic(settings.extractModel,'You classify whether images are medical exam figures. Output JSON only.',[{role:'user',content}],400);
-      const arr=parseJSON(resp);
-      if(Array.isArray(arr))arr.forEach((v,i)=>{if(b.s+i<result.length)result[b.s+i]=!!v;});
-    }catch(e){console.error('vision batch',e);/* keep defaults (true) on failure */}
-    done+=b.urls.length;onProg&&onProg('Checking images are medical … '+done+'/'+dataURLs.length);
+  if(!ordered.length)return;
+  // group image data-URLs by the question-start number they sit beneath
+  const byNum=new Map();      // anchorNumber -> [dataURL]
+  const orphans=[];           // figures that appeared before any question-start
+  ordered.forEach(o=>{
+    if(o.num==null){orphans.push(o.dataURL);return;}
+    if(!byNum.has(o.num))byNum.set(o.num,[]);
+    byNum.get(o.num).push(o.dataURL);
   });
-  return result;
+  // map each anchor number to a question index: prefer the question's own PDF number,
+  // then fall back to ordinal position (k-th question-start == k-th question)
+  const numToQ=new Map();
+  questions.forEach((q,i)=>{const n=parseInt(q.number,10);if(n>0&&!numToQ.has(n))numToQ.set(n,i);});
+  anchorOrder.forEach((num,k)=>{if(!numToQ.has(num)&&questions[k]!==undefined)numToQ.set(num,k);});
+  const put=(qi,urls)=>{if(questions[qi])questions[qi].images=(questions[qi].images||[]).concat(urls);};
+  byNum.forEach((urls,num)=>{
+    let qi=numToQ.has(num)?numToQ.get(num):-1;
+    if(qi<0){const k=anchorOrder.indexOf(num);qi=(k>=0&&questions[k]!==undefined)?k:0;}
+    put(qi,urls);
+  });
+  if(orphans.length)put(0,orphans); // no question-start above them → give to the first item
 }
 
 
@@ -1319,43 +1311,107 @@ function startTest(){
 function curQ(){return state.questions[state.order[state.cur]];}
 function curA(){return state.attempts[state.order[state.cur]];}
 
-/* Turn verbatim stem text into clean HTML: prose reflows into paragraphs,
-   lab/tabular blocks become aligned tables. Words are never changed — only layout. */
+/* ---- lab-block detection helpers (used by renderStem) ----
+   These tell a genuine lab row ("Sodium  140 mEq/L") apart from an ordinary
+   sentence that happens to contain a number, so labs can be lifted out of the
+   vignette prose into their own clean, aligned section. Words are never changed. */
+const LAB_LEXICON=/\b(sodium|potassium|chloride|bicarbonate|na\+?|k\+?|cl[-–]?|hco3\-?|bun|urea nitrogen|creatinine|glucose|calcium|magnesium|phosph(?:orus|ate)|albumin|globulin|proteins?|bilirubin|ast|alt|aspartate|alanine|alkaline phosphatase|amylase|lipase|ggt|ldh|hemoglobin|hematocrit|hgb|hct|hb|hba1c|a1c|wbc|rbc|platelets?|mcv|mch|mchc|rdw|leukocytes?|erythrocytes?|neutrophils?|segmented|bands?|lymphocytes?|monocytes?|eosinophils?|basophils?|reticulocytes?|ph|pco2|po2|paco2|pao2|tsh|thyroxine|triiodothyronine|t3|t4|cholesterol|triglycerides?|hdl|ldl|vldl|troponin|ck|ck\-mb|creatine kinase|bnp|nt\-probnp|ferritin|iron|tibc|transferrin|inr|pt|ptt|aptt|esr|crp|c\-reactive protein|lactate|lactic acid|ammonia|uric acid|osmolality|cortisol|acth|pth|prolactin|fsh|lh|estradiol|testosterone|hcg|β\-hcg|beta\-hcg|d\-dimer|fibrinogen|haptoglobin|cd4|anion gap|base excess|specific gravity|ketones|nitrites?|leukocyte esterase|urobilinogen|cell count)\b/i;
+const LAB_STOP=/\b(is|are|was|were|the|and|for|with|of|at|to|in|on|by|he|she|her|his|had|has|have|who|which|after|before|during|because|but|not|been|being|this|that|these|those|about|over|under|per|from|into|reports?|shows?|reveals?|noted?|patient|years?|old|man|woman|boy|girl|male|female)\b/i;
+const LAB_QUAL=/^(positive|negative|trace|reactive|non\-?reactive|normal|elevated|decreased|increased|present|absent|clear|cloudy|turbid|reddish|yellow|amber|within normal limits|wnl)\b/i;
+const LAB_SUBHEADER=/^(serum|plasma|blood|whole blood|arterial blood gas(?:es)?|venous blood gas|abg|csf|cerebrospinal fluid|urine|urinalysis|complete blood count|cbc|hematolog(?:y|ic)|coagulation|chemistr(?:y|ies)|lipid panel|liver (?:function|panel|studies)|thyroid (?:function|panel|studies)|differential)\s*:?\s*$/i;
+// a stricter value gate: a real lab value is a number (+unit/range) or a short
+// qualitative result — NOT a narrative sentence that merely starts with a number
+function labValueClean(v){
+  v=String(v).trim();
+  if(LAB_QUAL.test(v))return v.split(/\s+/).length<=4;              // 'positive', 'trace', '2+ positive'
+  if(!/^[<>≤≥(]?\s?\d/.test(v))return false;                        // must begin with a number
+  if(/\b(years?|months?|weeks?|days?|hours?|old|ago|comes?|came|man|woman|boy|girl|male|female|history|presents?|reports?|denies?|noted?|shows?|reveals?)\b/i.test(v))return false;
+  const tail=v.split(/\s+/).slice(1).filter(w=>/^[a-z]{3,}$/.test(w)&&!/^(with|and|per|to|of|the)$/i.test(w));
+  return tail.length<2;                                             // no run of sentence words after the number
+}
+function labIsLabelish(s){
+  s=String(s).trim();
+  if(!s||s.length>36)return false;
+  if(LAB_STOP.test(s))return false;                                 // ordinary sentence words → not a lab label
+  if(/^(a|an|the|of|in|to|is|as|at|on|by|or)$/i.test(s))return false; // bare article/preposition
+  if(LAB_LEXICON.test(s))return true;                              // a recognized test name
+  if(s.length<2)return false;                                      // lone letter that isn't a known ion
+  if(s.split(/\s+/).length>5)return false;
+  return /[A-Za-z]/.test(s);
+}
+function labIsRange(s){s=String(s).trim().replace(/^\(|\)$/g,'');return /[-–—]|[<>≤≥]/.test(s)&&/^[<>≤≥(]?\s?\d/.test(s);}
+// parse one line into a lab row {cells:[test,value,ref?],indent} or null
+function labRow(line){
+  const t=String(line).replace(/^\s+/,'');const indent=(String(line).length-t.length)>0;
+  if(!t)return null;
+  // columns preserved by a tab or a run of 2+ spaces (how the PDF reader separates columns)
+  let parts=t.split(/\t|\s{2,}/).map(s=>s.trim()).filter(Boolean);
+  if(parts.length>=2 && labIsLabelish(parts[0]) && labValueClean(parts.slice(1).join(' '))){
+    let test=parts[0],value,ref='';
+    if(parts.length>=3 && labIsRange(parts[parts.length-1])){ref=parts[parts.length-1];value=parts.slice(1,-1).join(' ');}
+    else value=parts.slice(1).join(' ');
+    return {cells:ref?[test,value,ref]:[test,value],indent};
+  }
+  // collapsed "Label value" on a short line (e.g. 'Na+ 140 mEq/L')
+  if(t.length<=62){
+    const m=/^([A-Za-z][A-Za-z0-9 +\-().,/µμº°]{0,34}?)\s+([<>≤≥(]?\s?\d[\s\S]*)$/.exec(t);
+    if(m && labIsLabelish(m[1]) && labValueClean(m[2])){
+      let value=m[2].trim(),ref='';
+      const rm=/\s*\(([^)]*)\)\s*$/.exec(value);
+      if(rm && labIsRange(rm[1])){ref=rm[1].trim();value=value.slice(0,rm.index).trim();}
+      return {cells:ref?[m[1].trim(),value,ref]:[m[1].trim(),value],indent};
+    }
+  }
+  return null;
+}
+// when labs got mushed inline after an intro like "Laboratory studies show: Na 140, K 4.2 …",
+// break them back into one row per line so they align in the table
+function splitInlineLabs(line){
+  const t=String(line).trim();
+  const im=/^(.*?\b(?:laborator(?:y|ies)|serum|plasma|arterial blood gas(?:es)?|blood gas|urin(?:e|alysis)|cbc|complete blood count|chemistr(?:y|ies)|coagulation|lab(?:oratory)?\s+(?:studies|results|values|findings|data))\b[^:]*:)\s*(\S.+)$/i.exec(t);
+  if(!im)return null;
+  const intro=im[1],rest=im[2];
+  const segs=rest.split(/\s*[;,]\s*/).map(s=>s.trim()).filter(Boolean);
+  const labLike=segs.filter(s=>labRow(s)).length;
+  if(labLike>=2 && labLike>=segs.length-1)return [intro].concat(segs);
+  return null;
+}
+
+/* Turn verbatim stem text into clean HTML: prose reflows into paragraphs, and any
+   laboratory/tabular block is lifted into its own aligned, boxed section — the way
+   other qbanks show it under the vignette. Words are never changed; only layout. */
 function renderStem(text){
-  const lines=String(text||'').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+$/,''));
+  const raw=String(text||'').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+$/,''));
+  // pre-expand any inline lab run into one row per line
+  const lines=[];
+  for(const l of raw){const ex=splitInlineLabs(l);if(ex)lines.push.apply(lines,ex);else lines.push(l);}
   const out=[];let prose=[];let data=[];
   const flushProse=()=>{ if(prose.length){out.push('<p>'+esc(prose.join(' ').replace(/\s+/g,' ').trim())+'</p>');prose=[];} };
   const flushData=()=>{
     const rows=data;data=[];
-    if(rows.length<2){ if(rows.length===1)prose.push(rows[0].cells.join('  ')); return; }
-    const maxCols=rows.reduce((m,r)=>Math.max(m,r.header?1:r.cells.length),0);
-    let html='<div class="labwrap"><table class="labtable">';
+    const real=rows.filter(r=>!r.header);
+    // need >=2 genuine lab rows to form a table; a lone match rejoins the prose verbatim
+    if(real.length<2){rows.forEach(r=>prose.push(r.header?r.cells[0]:r.cells.join('  ')));return;}
+    const cols=real.some(r=>r.cells.length>=3)?3:2;
+    const prev=out.length?out[out.length-1]:'';
+    const introBefore=/:\s*<\/p>$/.test(prev); // a "Laboratory studies show:" lead-in already sits above
+    let html='<div class="labwrap">'+(introBefore?'':'<div class="labhead">Laboratory Studies</div>')+'<table class="labtable">';
     for(const r of rows){
-      if(r.header){html+='<tr><td class="lh" colspan="'+maxCols+'">'+esc(r.cells[0])+'</td></tr>';continue;}
-      html+='<tr'+(r.indent?' class="subgroup"':'')+'>'+r.cells.map((c,ci)=>
-        '<td class="'+(ci===0?'lk':'lv')+'">'+esc(c)+'</td>').join('')+'</tr>';
+      if(r.header){html+='<tr><td class="lh" colspan="'+cols+'">'+esc(r.cells[0])+'</td></tr>';continue;}
+      html+='<tr'+(r.indent?' class="subgroup"':'')+'>'+
+        '<td class="lk">'+esc(r.cells[0]||'')+'</td>'+
+        '<td class="lv">'+esc(r.cells[1]||'')+'</td>'+
+        (cols===3?'<td class="lr">'+esc(r.cells[2]||'')+'</td>':'')+'</tr>';
     }
     html+='</table></div>';out.push(html);
   };
-  const subHeader=/^(serum|urine|plasma|blood|arterial blood gas|csf|cerebrospinal fluid)\s*:?\s*$/i;
-  const asData=(line)=>{
-    const t=line.replace(/^\s+/,'');const indent=line.length-t.length>0;
-    let cells=t.split(/\s{2,}/).map(s=>s.trim()).filter(Boolean);
-    if(cells.length>=2 && /[\d<>+%]/.test(cells.slice(1).join(' '))) return {cells,indent};
-    // fallback for short "Label value" rows where spacing was collapsed (e.g. 'Na+ 140 mEq/L')
-    if(t.length<=42){
-      const m=/^([A-Za-z][A-Za-z0-9+\-().,/ ]{0,26}?)\s+((?:[<>]?\d[\d.,]*\s?[A-Za-z%/µμ°·].*)|(?:[<>]?\d[\d.,]*\+?%?)|positive|negative|trace|reddish)$/i.exec(t);
-      if(m && !/\b(is|are|was|were|the|and|for|with|of|at|to|in|on|by|he|she|her|his|had|has|note[ds]?|show[ns]?)\b/i.test(m[1]))
-        return {cells:[m[1].trim(),m[2].trim()],indent};
-    }
-    return null;
-  };
   for(const line of lines){
     if(/^\s*$/.test(line))continue;
-    const d=asData(line);
+    const trimmed=line.trim();
+    if(LAB_SUBHEADER.test(trimmed)){flushProse();data.push({header:true,cells:[trimmed]});continue;}
+    const d=labRow(line);
     if(d){flushProse();data.push(d);continue;}
-    if(subHeader.test(line.trim())){flushProse();data.push({header:true,cells:[line.trim()]});continue;}
-    flushData();prose.push(line.trim());
+    flushData();prose.push(trimmed);
   }
   flushProse();flushData();
   return out.join('')||('<p>'+esc(String(text||''))+'</p>');
