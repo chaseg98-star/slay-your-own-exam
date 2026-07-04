@@ -1,5 +1,5 @@
 /* Slay Your Own Exam — offline service worker */
-const CACHE = 'slayexam-v3';
+const CACHE = 'slayexam-v4';
 const SHELL = [
   './',
   './index.html',
