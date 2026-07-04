@@ -6,6 +6,10 @@
 <title>Slay Your Own Exam — practice from your own PDFs</title>
 <meta name="description" content="Turn your own question-bank PDF into a realistic, UWorld-style board exam — verbatim questions, a 90-second timer, highlighting, full lab values, and AI tutoring on what you missed.">
 <meta name="theme-color" content="#1FBFAB">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta property="og:title" content="Slay Your Own Exam">
 <meta property="og:description" content="Practice USMLE/NBME-style blocks from your own PDFs, then get tutored on exactly what you missed.">
 <meta property="og:type" content="website">
@@ -316,6 +320,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
     Slay Your Own Exam<span class="sub2">from your own PDFs</span>
   </div>
   <div class="spacer"></div>
+  <a class="iconbtn" href="flashcards.html" style="text-decoration:none;display:inline-flex;align-items:center">🗂 Flashcards</a>
   <a class="iconbtn" href="study-buddy.html" style="text-decoration:none;display:inline-flex;align-items:center">🎙 Study Buddy</a>
   <button class="iconbtn hidden" id="navAdmin">Admin</button>
   <button class="iconbtn" id="navHistory">History</button>
@@ -1986,6 +1991,7 @@ function openSession(id){
 applySettingsToUI();
 $('#heroStart')&&($('#heroStart').onclick=()=>{const d=$('#drop');if(d)d.scrollIntoView({behavior:'smooth',block:'center'});});
 if(!tryResume())showScreen('setup');
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>

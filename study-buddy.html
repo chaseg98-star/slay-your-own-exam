@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Study Buddy — voice tutor inside your Claude app</title>
 <meta name="description" content="Turn the Claude app you already pay for into a voice-first flashcard, quiz and PDF-review companion. No API key needed.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1FBFAB">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
 :root{
   --bg:#F3FBF9; --panel:#ffffff; --ink:#1C2B2A; --muted:#5E716E; --line:#E2EEEB;
@@ -62,6 +68,7 @@ table.limits td:first-child{font-weight:600;white-space:nowrap;width:38%}
     Slay Your Own Exam<span class="sub2">study buddy</span>
   </div>
   <div class="spacer"></div>
+  <a class="iconbtn" href="flashcards.html">🗂 Flashcards</a>
   <a class="iconbtn" href="index.html">← Back to exams</a>
 </div>
 
@@ -189,6 +196,7 @@ document.querySelectorAll('.copybtn').forEach(function(btn){
     });
   });
 });
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>

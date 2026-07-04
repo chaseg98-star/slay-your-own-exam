@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flashcards — Slay Your Own Exam</title>
+<meta name="description" content="Flashcard decks and a PDF library stored entirely on your device. Import cards Claude writes for you — no API key needed.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1FBFAB">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root{
+  --bg:#F3FBF9; --panel:#ffffff; --ink:#1C2B2A; --muted:#5E716E; --line:#E2EEEB;
+  --accent:#1FBFAB; --accent-d:#0E9C8B; --wash:#E2F7F3; --soft:#F4FAF9;
+  --rose:#C2447E; --rose-wash:#FBEAF2; --bad:#D17A6B; --bad-wash:#FAEAE6;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 10px 30px rgba(20,60,55,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+button{font-family:inherit;cursor:pointer}
+a{color:var(--accent-d)}
+.appbar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}
+.brand .logo{width:26px;height:26px;border-radius:8px;background:var(--accent);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.brand .logo svg{width:16px;height:16px}
+.spacer{flex:1}
+.iconbtn{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 12px;font-weight:500;font-size:12.5px;color:var(--ink);text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.iconbtn:hover{background:var(--soft);border-color:var(--accent)}
+.app{max-width:760px;margin:0 auto;padding:0 14px 60px}
+.tabs{display:flex;gap:8px;margin:18px 0 6px}
+.tab{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:8px 18px;font-weight:600;font-size:13.5px;color:var(--muted)}
+.tab.on{background:var(--wash);color:var(--accent-d);border-color:var(--accent)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:14px 0;box-shadow:var(--shadow)}
+.card h2{margin:0 0 4px;font-size:17px}
+.card .sub{color:var(--muted);font-size:13px;margin:0 0 10px}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:99px;padding:10px 18px;font-size:14px;font-weight:600}
+.btn:hover{background:var(--accent-d)}
+.btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--soft);border-color:var(--accent)}
+.btn.rose{background:var(--rose)}
+.btn.danger{background:var(--bad)}
+.btn.sm{padding:7px 13px;font-size:12.5px}
+input[type=text],textarea,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+textarea{min-height:110px;resize:vertical;font-family:var(--mono);font-size:12.5px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:none}
+.row .grow{flex:1;min-width:120px}
+.deckrow{display:flex;align-items:center;gap:10px;padding:13px 4px;border-top:1px solid var(--line)}
+.deckrow:first-of-type{border-top:none}
+.deckrow .nm{font-weight:600}
+.deckrow .meta{color:var(--muted);font-size:12.5px}
+.due{display:inline-block;background:var(--rose-wash);color:var(--rose);border-radius:99px;padding:1px 9px;font-size:11.5px;font-weight:700;margin-left:7px}
+.empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:13.5px}
+.note{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--muted);margin:12px 0}
+.note b{color:var(--ink)}
+.copywrap{position:relative;margin:10px 0}
+.copybox{background:#10201d;color:#D9EDE9;border-radius:12px;padding:14px 14px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap}
+.copybtn{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border:none;border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700}
+.copybtn.done{background:var(--rose)}
+/* study */
+.flash{min-height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px 20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow);cursor:pointer;user-select:none;margin:14px 0}
+.flash .side{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.flash .txt{font-size:19px;font-weight:600;line-height:1.5;max-width:56ch;white-space:pre-wrap}
+.flash.back{background:var(--wash);border-color:var(--accent)}
+.flash .hint{margin-top:18px;color:var(--muted);font-size:12.5px}
+.grade{display:flex;gap:10px;justify-content:center;margin:8px 0}
+.grade .btn{flex:1;max-width:220px;padding:14px}
+.prog{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px;margin-top:6px;font-family:var(--mono)}
+.cardrow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-top:1px solid var(--line);font-size:13.5px}
+.cardrow .f{flex:1;font-weight:600}
+.cardrow .b{flex:1;color:var(--muted)}
+.x{background:none;border:none;color:var(--bad);font-size:16px;padding:2px 6px}
+.hidden{display:none!important}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#10201d;color:#fff;border-radius:99px;padding:9px 20px;font-size:13px;z-index:99;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 64 64" fill="none"><path d="M18 33l9 9 19-21" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    Flashcards
+  </div>
+  <div class="spacer"></div>
+  <a class="iconbtn" href="index.html">Exams</a>
+  <a class="iconbtn" href="study-buddy.html">🎙 Buddy</a>
+</div>
+
+<section class="app">
+  <div class="tabs">
+    <button class="tab on" id="tabDecks">Decks</button>
+    <button class="tab" id="tabPdfs">My PDFs</button>
+  </div>
+
+  <!-- ================= DECKS LIST ================= -->
+  <div id="view-decks">
+    <div class="card">
+      <h2>Your decks</h2>
+      <p class="sub">Stored on this device — they stay even when you're offline.</p>
+      <div id="deckList"><div class="empty">No decks yet. Create one below, or import cards from Claude.</div></div>
+      <div class="row" style="margin-top:12px">
+        <input type="text" id="newDeckName" class="grow" placeholder="New deck name (e.g. Pharm — Cardio)">
+        <button class="btn" id="btnNewDeck">＋ Create</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Get Claude to write your cards</h2>
+      <p class="sub">No API key needed. In the Claude app, attach your PDF, send this prompt, then paste what she gives you into the import box below.</p>
+      <div class="copywrap">
+        <button class="copybtn" data-copy="genPrompt">Copy</button>
+        <div class="copybox" id="genPrompt">Read the attached PDF and turn it into study flashcards covering every high-yield, testable fact. Output ONLY the cards, one per line, in exactly this format — front, space, two colons, space, back:
+
+What is the antidote for acetaminophen overdose? :: N-acetylcysteine
+
+No numbering, no headers, no commentary, no blank lines between cards. Keep each back short enough to say out loud in one breath.</div>
+      </div>
+      <h2 style="margin-top:16px">Import cards</h2>
+      <p class="sub">Paste lines like <b>front :: back</b> (also accepts tab-separated, or Q:/A: pairs).</p>
+      <textarea id="importText" placeholder="What is the antidote for acetaminophen overdose? :: N-acetylcysteine&#10;First-line treatment for anaphylaxis? :: IM epinephrine"></textarea>
+      <div class="row" style="margin-top:10px">
+        <select id="importDeck" class="grow"></select>
+        <button class="btn" id="btnImport">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DECK EDIT ================= -->
+  <div id="view-deck" class="hidden">
+    <div class="card">
+      <div class="row">
+        <button class="btn ghost sm" id="btnBackDecks">← Decks</button>
+        <div class="grow"></div>
+        <button class="btn sm" id="btnStudyDeck">▶ Study</button>
+        <button class="btn ghost sm" id="btnExportDeck">Export</button>
+        <button class="btn danger sm" id="btnDeleteDeck">Delete deck</button>
+      </div>
+      <h2 id="deckTitle" style="margin-top:12px"></h2>
+      <p class="sub" id="deckMeta"></p>
+      <div class="row">
+        <input type="text" id="cardFront" class="grow" placeholder="Front (question)">
+        <input type="text" id="cardBack" class="grow" placeholder="Back (answer)">
+        <button class="btn" id="btnAddCard">＋ Add</button>
+      </div>
+      <div id="cardList" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- ================= STUDY ================= -->
+  <div id="view-study" class="hidden">
+    <div class="row" style="margin-top:16px">
+      <button class="btn ghost sm" id="btnQuitStudy">← End session</button>
+      <div class="grow"></div>
+      <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)">
+        <input type="checkbox" id="ttsOn" style="width:auto"> 🔊 Read aloud
+      </label>
+    </div>
+    <div class="flash" id="flashCard">
+      <div class="side" id="flashSide">Front</div>
+      <div class="txt" id="flashTxt"></div>
+      <div class="hint" id="flashHint">tap to flip</div>
+    </div>
+    <div class="grade hidden" id="gradeRow">
+      <button class="btn danger" id="btnMissed">✗ Missed it</button>
+      <button class="btn" id="btnGot">✓ Got it</button>
+    </div>
+    <div class="prog"><span id="progLeft"></span><span id="progScore"></span></div>
+  </div>
+
+  <!-- ================= PDFS ================= -->
+  <div id="view-pdfs" class="hidden">
+    <div class="card">
+      <h2>My PDFs</h2>
+      <p class="sub">Saved inside the app on this device — open them any time, even offline.</p>
+      <div id="pdfList"><div class="empty">No PDFs stored yet.</div></div>
+      <div class="row" style="margin-top:12px">
+        <input type="file" id="pdfFile" accept="application/pdf" multiple style="flex:1;min-width:200px">
+        <button class="btn" id="btnAddPdf">＋ Save to app</button>
+      </div>
+      <div class="note"><b>Heads up:</b> files live in this browser's storage on this phone. Deleting the app/site data deletes them, so keep originals somewhere safe too.</div>
+    </div>
+  </div>
+
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- IndexedDB ---------------- */
+let db;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open('slayexam-flashcards',1);
+    r.onupgradeneeded = ()=>{
+      const d = r.result;
+      d.createObjectStore('decks',{keyPath:'id'});
+      d.createObjectStore('cards',{keyPath:'id'}).createIndex('deckId','deckId');
+      d.createObjectStore('pdfs',{keyPath:'id'});
+    };
+    r.onsuccess = ()=>{ db = r.result; res(); };
+    r.onerror = ()=>rej(r.error);
+  });
+}
+function tx(store,mode,fn){
+  return new Promise((res,rej)=>{
+    const t = db.transaction(store,mode);
+    const out = fn(t.objectStore(store));
+    t.oncomplete = ()=>res(out && out.result !== undefined ? out.result : out);
+    t.onerror = ()=>rej(t.error);
+  });
+}
+function getAll(store){ return new Promise((res,rej)=>{ const r = db.transaction(store).objectStore(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function put(store,obj){ return tx(store,'readwrite',s=>s.put(obj)); }
+function del(store,id){ return tx(store,'readwrite',s=>s.delete(id)); }
+const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+
+/* ---------------- state + views ---------------- */
+let decks=[], cards=[], currentDeck=null;
+const $ = id=>document.getElementById(id);
+const views = ['view-decks','view-deck','view-study','view-pdfs'];
+function show(v){ views.forEach(x=>$(x).classList.toggle('hidden',x!==v)); }
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1900); }
+const esc = s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function refresh(){
+  decks = await getAll('decks');
+  cards = await getAll('cards');
+  renderDecks();
+}
+function deckCards(id){ return cards.filter(c=>c.deckId===id); }
+function dueCards(id){ const now=Date.now(); return deckCards(id).filter(c=>(c.due||0)<=now); }
+
+function renderDecks(){
+  const el = $('deckList');
+  if(!decks.length){ el.innerHTML='<div class="empty">No decks yet. Create one below, or import cards from Claude.</div>'; }
+  else{
+    el.innerHTML = decks.map(d=>{
+      const n=deckCards(d.id).length, due=dueCards(d.id).length;
+      return `<div class="deckrow">
+        <div style="flex:1"><span class="nm">${esc(d.name)}</span>${due?`<span class="due">${due} due</span>`:''}
+          <div class="meta">${n} card${n===1?'':'s'}</div></div>
+        <button class="btn sm" data-study="${d.id}" ${n?'':'disabled'}>▶ Study</button>
+        <button class="btn ghost sm" data-open="${d.id}">Edit</button>
+      </div>`;
+    }).join('');
+  }
+  $('importDeck').innerHTML = '<option value="">Import into… (new deck)</option>' +
+    decks.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openDeck(b.dataset.open));
+  el.querySelectorAll('[data-study]').forEach(b=>b.onclick=()=>startStudy(b.dataset.study));
+}
+
+$('btnNewDeck').onclick = async ()=>{
+  const name = $('newDeckName').value.trim(); if(!name) return toast('Give the deck a name');
+  await put('decks',{id:uid(),name,created:Date.now()});
+  $('newDeckName').value=''; await refresh(); toast('Deck created');
+};
+
+/* ---------------- deck edit ---------------- */
+function openDeck(id){
+  currentDeck = decks.find(d=>d.id===id); if(!currentDeck) return;
+  $('deckTitle').textContent = currentDeck.name;
+  renderCardList(); show('view-deck');
+}
+function renderCardList(){
+  const list = deckCards(currentDeck.id);
+  $('deckMeta').textContent = `${list.length} cards · ${dueCards(currentDeck.id).length} due now`;
+  $('cardList').innerHTML = list.length ? list.map(c=>
+    `<div class="cardrow"><div class="f">${esc(c.front)}</div><div class="b">${esc(c.back)}</div>
+     <button class="x" data-del="${c.id}">✕</button></div>`).join('')
+    : '<div class="empty">No cards yet — add one above or use the importer.</div>';
+  $('cardList').querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    await del('cards',b.dataset.del); cards=cards.filter(c=>c.id!==b.dataset.del); renderCardList();
+  });
+}
+$('btnBackDecks').onclick = ()=>{ refresh(); show('view-decks'); };
+$('btnAddCard').onclick = async ()=>{
+  const f=$('cardFront').value.trim(), b=$('cardBack').value.trim();
+  if(!f||!b) return toast('Fill both sides');
+  const c={id:uid(),deckId:currentDeck.id,front:f,back:b,box:1,due:0};
+  await put('cards',c); cards.push(c);
+  $('cardFront').value=''; $('cardBack').value=''; $('cardFront').focus(); renderCardList();
+};
+$('btnDeleteDeck').onclick = async ()=>{
+  if(!confirm(`Delete "${currentDeck.name}" and all its cards?`)) return;
+  for(const c of deckCards(currentDeck.id)) await del('cards',c.id);
+  await del('decks',currentDeck.id); await refresh(); show('view-decks'); toast('Deck deleted');
+};
+$('btnExportDeck').onclick = ()=>{
+  const txt = deckCards(currentDeck.id).map(c=>`${c.front} :: ${c.back}`).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+  a.download = currentDeck.name.replace(/[^\w\- ]+/g,'')+'.txt'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+};
+$('btnStudyDeck').onclick = ()=>startStudy(currentDeck.id);
+
+/* ---------------- import ---------------- */
+function parseCards(text){
+  const out=[]; const lines=text.split(/\r?\n/);
+  let qBuf=null;
+  for(let raw of lines){
+    const line=raw.trim(); if(!line) continue;
+    if(/^q[:.)]/i.test(line)){ qBuf=line.replace(/^q[:.)]\s*/i,''); continue; }
+    if(/^a[:.)]/i.test(line) && qBuf){ out.push([qBuf,line.replace(/^a[:.)]\s*/i,'')]); qBuf=null; continue; }
+    let m = line.split(/\s*::\s*/); if(m.length<2) m = line.split(/\t+/);
+    if(m.length>=2) out.push([m[0].trim(), m.slice(1).join(' ').trim()]);
+  }
+  return out.filter(([f,b])=>f&&b);
+}
+$('btnImport').onclick = async ()=>{
+  const pairs = parseCards($('importText').value);
+  if(!pairs.length) return toast('No cards found — check the format');
+  let deckId = $('importDeck').value;
+  if(!deckId){
+    const name = prompt('Name for the new deck:','Imported '+new Date().toLocaleDateString());
+    if(!name) return;
+    deckId = uid(); await put('decks',{id:deckId,name:name.trim(),created:Date.now()});
+  }
+  for(const [f,b] of pairs) await put('cards',{id:uid(),deckId,front:f,back:b,box:1,due:0});
+  $('importText').value=''; await refresh(); toast(`Imported ${pairs.length} cards ♥`);
+};
+
+/* ---------------- study (Leitner boxes) ---------------- */
+const BOX_DELAY = [10*60e3, 24*3600e3, 3*24*3600e3]; // box1 10min, box2 1day, box3 3days
+let queue=[], cur=null, flipped=false, got=0, missed=0;
+
+function startStudy(deckId){
+  const deck = decks.find(d=>d.id===deckId); if(!deck) return;
+  let list = dueCards(deckId);
+  if(!list.length){
+    if(!confirm('Nothing due right now. Practice the whole deck anyway?')) return;
+    list = deckCards(deckId);
+  }
+  if(!list.length) return toast('Deck is empty');
+  queue = list.slice().sort(()=>Math.random()-.5);
+  got=0; missed=0; currentDeck=deck;
+  show('view-study'); nextCard();
+}
+function nextCard(){
+  if(!queue.length) return endStudy();
+  cur = queue[0]; flipped=false;
+  $('flashSide').textContent='Front';
+  $('flashTxt').textContent=cur.front;
+  $('flashCard').classList.remove('back');
+  $('flashHint').textContent='tap to flip';
+  $('gradeRow').classList.add('hidden');
+  updateProg(); speakIf(cur.front);
+}
+function flip(){
+  if(!cur || flipped) return;
+  flipped=true;
+  $('flashSide').textContent='Back';
+  $('flashTxt').textContent=cur.back;
+  $('flashCard').classList.add('back');
+  $('flashHint').textContent='how did you do?';
+  $('gradeRow').classList.remove('hidden');
+  speakIf(cur.back);
+}
+$('flashCard').onclick = flip;
+$('btnGot').onclick = async ()=>{
+  cur.box = Math.min(3,(cur.box||1)+1);
+  cur.due = Date.now()+BOX_DELAY[cur.box-1];
+  await put('cards',cur); got++;
+  queue.shift(); nextCard();
+};
+$('btnMissed').onclick = async ()=>{
+  cur.box = 1; cur.due = 0;
+  await put('cards',cur); missed++;
+  queue.push(queue.shift()); // comes back later this session
+  nextCard();
+};
+function updateProg(){
+  $('progLeft').textContent = `${queue.length} left`;
+  $('progScore').textContent = `✓ ${got}   ✗ ${missed}`;
+}
+function endStudy(){
+  stopSpeak();
+  toast(`Session done — ${got} right, ${missed} misses`);
+  refresh(); show('view-decks');
+}
+$('btnQuitStudy').onclick = endStudy;
+
+/* ---------------- read aloud ---------------- */
+$('ttsOn').checked = localStorage.getItem('fc-tts')==='1';
+$('ttsOn').onchange = ()=>localStorage.setItem('fc-tts',$('ttsOn').checked?'1':'0');
+function speakIf(text){
+  if(!$('ttsOn').checked || !('speechSynthesis' in window)) return;
+  stopSpeak();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.02; speechSynthesis.speak(u);
+}
+function stopSpeak(){ if('speechSynthesis' in window) speechSynthesis.cancel(); }
+
+/* ---------------- PDFs ---------------- */
+async function renderPdfs(){
+  const list = await getAll('pdfs');
+  $('pdfList').innerHTML = list.length ? list.map(p=>
+    `<div class="deckrow"><div style="flex:1"><span class="nm">${esc(p.name)}</span>
+      <div class="meta">${(p.size/1048576).toFixed(1)} MB · saved ${new Date(p.added).toLocaleDateString()}</div></div>
+      <button class="btn sm" data-openpdf="${p.id}">Open</button>
+      <button class="x" data-delpdf="${p.id}">✕</button></div>`).join('')
+    : '<div class="empty">No PDFs stored yet.</div>';
+  $('pdfList').querySelectorAll('[data-openpdf]').forEach(b=>b.onclick=async()=>{
+    const all = await getAll('pdfs'); const p = all.find(x=>x.id===b.dataset.openpdf);
+    if(p) window.open(URL.createObjectURL(p.blob),'_blank');
+  });
+  $('pdfList').querySelectorAll('[data-delpdf]').forEach(b=>b.onclick=async()=>{
+    await del('pdfs',b.dataset.delpdf); renderPdfs();
+  });
+}
+$('btnAddPdf').onclick = async ()=>{
+  const files = $('pdfFile').files;
+  if(!files.length) return toast('Pick a PDF first');
+  for(const f of files){
+    await put('pdfs',{id:uid(),name:f.name,size:f.size,blob:f,added:Date.now()});
+  }
+  $('pdfFile').value=''; renderPdfs(); toast(`Saved ${files.length} PDF${files.length>1?'s':''}`);
+  if(navigator.storage && navigator.storage.persist) navigator.storage.persist();
+};
+
+/* ---------------- tabs / copy / boot ---------------- */
+$('tabDecks').onclick = ()=>{ $('tabDecks').classList.add('on'); $('tabPdfs').classList.remove('on'); refresh(); show('view-decks'); };
+$('tabPdfs').onclick = ()=>{ $('tabPdfs').classList.add('on'); $('tabDecks').classList.remove('on'); renderPdfs(); show('view-pdfs'); };
+document.querySelectorAll('.copybtn').forEach(btn=>{
+  btn.onclick = ()=>navigator.clipboard.writeText($(btn.dataset.copy).innerText).then(()=>{
+    btn.textContent='Copied ♥'; btn.classList.add('done');
+    setTimeout(()=>{btn.textContent='Copy'; btn.classList.remove('done');},1800);
+  });
+});
+
+openDB().then(refresh);
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
