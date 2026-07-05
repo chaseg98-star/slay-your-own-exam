@@ -16,6 +16,12 @@ Everything runs **in your browser**. Your PDFs are never uploaded anywhere. By d
 - **AI tutoring** — after a block, get targeted, high-yield feedback based on your answers, timing, what you highlighted, and what you crossed out (uses your own Anthropic API key, entered in Settings).
 - **Accounts (optional)** — sign up / log in to sync every saved test, and every in-progress answer, highlight, and cross-out, to your account in real time so you can pick up on another device. One designated admin account can see every account's saved tests. Off by default; see [Set up accounts](#set-up-accounts-optional) below.
 
+## Get it as an app
+
+- **Phone / tablet:** the site is an installable PWA — open it in your browser and use *Add to Home Screen* (Safari) or *Install app* (Chrome). It works offline after the first visit.
+- **Windows / Mac / Linux (downloadable):** a desktop app is built from `desktop/` by the **Build desktop app** GitHub Action and published under [Releases](../../releases). It opens the live site (so it's always up to date and fully online — accounts, AI tutoring, cloud sync all work) and falls back to a bundled offline copy. To cut a new build: repo **Actions → Build desktop app → Run workflow** (or push a `desktop-v*` tag).
+  - The installers are unsigned: on Windows, click *More info → Run anyway* at the SmartScreen prompt; on macOS, right-click the app → *Open* the first time.
+
 ## Run it locally
 
 Just open `index.html` in any modern browser (Chrome, Edge, Safari, Firefox). No build step, no install.
@@ -62,6 +68,13 @@ This needs a free [Firebase](https://firebase.google.com) project (Google's back
 8. Commit and push — GitHub Pages redeploys automatically. Sign up on the live site with the admin email to get the admin view (an **Admin** button appears in the top bar).
 
 Until you complete this, the "Sign in" button in the top bar shows "Accounts unavailable" and the app behaves exactly as it did before.
+
+## Getting a URL without a username in it (no domain purchase)
+
+Two free options, in order of effort:
+
+1. **GitHub organization (recommended, ~5 min):** create a free GitHub organization named after the site (e.g. `slayyourexam`), transfer this repo to it (**Settings → General → Danger Zone → Transfer ownership**), then rename the repo to `slayyourexam.github.io`. The site then lives at **`https://slayyourexam.github.io/`** — no username, no domain to buy. Re-enable Pages after the transfer (Settings → Pages → Deploy from a branch → `main` / root).
+2. **Firebase Hosting (~10 min, also lets the repo go private):** the app's existing `slayyourexam` Firebase project can host the site at **`https://slayyourexam.web.app`**. See PR #1 for the config and the one-time service-account setup.
 
 ## Deploy as a website (GitHub Pages)
 

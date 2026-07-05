@@ -1,0 +1,126 @@
+name: Build desktop app
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Optional release tag (e.g. v1.0.0). If set, a GitHub Release with
+          that tag is created/updated with the installers. Leave empty to only
+          upload workflow artifacts.
+        required: false
+        default: ""
+        type: string
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    env:
+      # Never look for signing certificates — builds are intentionally unsigned.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Copy the static web app into the Electron bundle so the desktop app
+      # has an offline fallback on a fully offline first run. Uses node so the
+      # same step works on Windows, macOS and Linux runners.
+      - name: Copy web app into desktop bundle
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const items = [
+              "index.html",
+              "flashcards.html",
+              "study-buddy.html",
+              "master-lock.js",
+              "sw.js",
+              "manifest.webmanifest",
+              "404.html",
+              "alarm.m4a",
+              "icons",
+            ];
+            fs.rmSync("desktop/site", { recursive: true, force: true });
+            fs.mkdirSync("desktop/site", { recursive: true });
+            for (const item of items) {
+              if (fs.existsSync(item)) {
+                fs.cpSync(item, "desktop/site/" + item, { recursive: true });
+                console.log("copied " + item);
+              } else {
+                console.warn("WARNING: missing " + item);
+              }
+            }
+          '
+
+      # Make the package version, artifact names and release tag all agree —
+      # from the pushed desktop-vX.Y.Z tag, or from the manual version input.
+      # --allow-same-version keeps the build working when the tag matches the
+      # version already committed in package.json (e.g. the first release).
+      - name: Sync release version
+        if: startsWith(github.ref, 'refs/tags/desktop-v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+        shell: bash
+        working-directory: desktop
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/desktop-v* ]]; then
+            V="${GITHUB_REF_NAME#desktop-v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            V="${{ inputs.version }}"
+            V="${V#desktop-v}"; V="${V#v}"
+            TAG="desktop-v${V}"
+          fi
+          npm version --no-git-tag-version --allow-same-version "$V"
+          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${V}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build installers
+        working-directory: desktop
+        run: npx electron-builder --publish never
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: slay-your-own-exam-${{ matrix.os }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.AppImage
+          if-no-files-found: warn
+
+      # One release step for both paths, always on the right tag: the pushed
+      # desktop-v* tag itself, or desktop-v<input version> for manual runs.
+      - name: Create/update GitHub Release
+        if: env.RELEASE_TAG != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Desktop app v${{ env.RELEASE_VERSION }}
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
