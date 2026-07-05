@@ -21,17 +21,12 @@
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "main.js",
+      "build/icon.png",
       "site/**/*"
     ],
     "directories": {
       "buildResources": "build",
       "output": "dist"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "CG1k",
-      "repo": "slay-your-own-exam",
-      "releaseType": "release"
     },
     "win": {
       "target": [

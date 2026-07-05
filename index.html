@@ -1250,8 +1250,15 @@ function inkBBox(ctx,band,pageW){
 async function extractPageImages(page){
   const OPS=pdfjsLib.OPS;
   const imgOps=new Set([OPS.paintImageXObject,OPS.paintInlineImageXObject,OPS.paintImageXObjectRepeat].filter(v=>v!==undefined));
+  // vector PAINT ops (not clips): a page with none of these and no bitmaps is pure
+  // text and never needs to be rendered — keeps huge text-only PDFs fast
+  const drawOps=new Set([OPS.fill,OPS.eoFill,OPS.stroke,OPS.closeStroke,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.shadingFill,OPS.paintSolidColorImageMask].filter(v=>v!==undefined));
   const opList=await page.getOperatorList();
-  let hasImg=false;for(const fn of opList.fnArray){if(imgOps.has(fn)){hasImg=true;break;}}
+  let hasImg=false,hasDraw=false;
+  for(const fn of opList.fnArray){
+    if(imgOps.has(fn))hasImg=true;else if(drawOps.has(fn))hasDraw=true;
+    if(hasImg&&hasDraw)break;
+  }
   const viewport=page.getViewport({scale:IMG_SCALE});
   // text anchors (question-start markers) + glyph boxes on this page, in device coords
   const anchors=[];const textRects=[];
@@ -1260,9 +1267,14 @@ async function extractPageImages(page){
     const lines={};
     for(const it of tc.items){
       const p=matApply(viewport.transform,it.transform[4],it.transform[5]);
-      const th=(Math.abs(it.transform[3])||it.height||10)*IMG_SCALE;
-      const tw=(it.width||0)*IMG_SCALE;
-      if(it.str&&it.str.trim())textRects.push({x0:p[0],y0:p[1]-th,x1:p[0]+tw,y1:p[1]+th*0.3});
+      if(it.str&&it.str.trim()){
+        // map the item's user-space box through the full viewport transform so
+        // rotated pages (/Rotate 90/270) still get correct device-space coverage
+        const w=it.width||0,h=it.height||Math.abs(it.transform[3])||10;
+        const cs=[[0,0],[w,0],[w,h],[0,h]].map(c=>matApply(viewport.transform,it.transform[4]+c[0],it.transform[5]+c[1]));
+        const xs=cs.map(c=>c[0]),ys=cs.map(c=>c[1]);
+        textRects.push({x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)});
+      }
       const key=Math.round(p[1]/2)*2;
       (lines[key]=lines[key]||{y:p[1],t:''}).t+=it.str;
     }
@@ -1270,13 +1282,15 @@ async function extractPageImages(page){
     Object.values(lines).forEach(l=>{const m=re.exec(l.t);if(m)anchors.push({num:parseInt(m[1],10),y:l.y});});
     anchors.sort((a,b)=>a.y-b.y);
   }catch(e){}
-  // pages with no text at all are only worth scanning when they carry a bitmap
-  const bands=(textRects.length||hasImg)?textFreeBands(textRects,viewport.width,viewport.height):[];
+  // the figure-zone fallback only applies to pages that could actually hold a
+  // figure: a bitmap somewhere (scans) or vector paint ops (drawn charts) —
+  // and pages with no text at all only when they carry a bitmap
+  const bands=((hasImg||hasDraw)&&(textRects.length||hasImg))?textFreeBands(textRects,viewport.width,viewport.height):[];
   if(!hasImg&&!bands.length)return {anchors,images:[]};
   // render page once
   const canvas=document.createElement('canvas');
   canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-  const ctx=canvas.getContext('2d');
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
   await page.render({canvasContext:ctx,viewport}).promise;
   // walk ops to find image placement boxes
   let ctm=viewport.transform.slice();const stack=[];const boxes=[];
@@ -1334,9 +1348,9 @@ async function extractPageImages(page){
    number when available, otherwise by ordinal position, so pictures reliably land in
    the right item even when the numbering doesn't line up. */
 async function attachImages(pdf,questions,onProg){
-  const ordered=[];        // {num, page, dataURL} in reading order (num = nearest question-start above)
-  const anchorOrder=[];const anchorSeen=new Set(); // distinct question-start numbers, in reading order
-  let carry=null;          // last question-start number seen, carried across page boundaries
+  const ordered=[];        // {num, seq, page, dataURL} in reading order
+  const anchorNums=[];     // every question-start occurrence's number, in reading order
+  let carryNum=null,carrySeq=-1,firstAnchorPage=0; // carried across page boundaries
   for(let p=1;p<=pdf.numPages;p++){
     onProg&&onProg('Scanning page '+p+' / '+pdf.numPages+' for pictures …');
     try{
@@ -1347,14 +1361,15 @@ async function attachImages(pdf,questions,onProg){
       images.forEach(im=>events.push({y:im.yTop,kind:'i',dataURL:im.dataURL}));
       events.sort((x,y)=>x.y-y.y||(x.kind==='a'?-1:1));
       for(const ev of events){
-        if(ev.kind==='a'){carry=ev.num;if(!anchorSeen.has(ev.num)){anchorSeen.add(ev.num);anchorOrder.push(ev.num);}}
-        else ordered.push({num:carry,page:p,dataURL:ev.dataURL});
+        if(ev.kind==='a'){carryNum=ev.num;carrySeq=anchorNums.length;anchorNums.push(ev.num);if(!firstAnchorPage)firstAnchorPage=p;}
+        else ordered.push({num:carryNum,seq:carrySeq,page:p,dataURL:ev.dataURL});
       }
     }catch(pageErr){console.warn('Image scan failed on page '+p+' — continuing:',pageErr);}
   }
   if(!ordered.length){onProg&&onProg('No question images found.');return;}
-  const put=(qi,urls)=>{if(questions[qi]&&urls.length)questions[qi].images=(questions[qi].images||[]).concat(urls);};
-  if(!anchorOrder.length){
+  let attached=0;
+  const put=(qi,urls)=>{if(questions[qi]&&urls.length){questions[qi].images=(questions[qi].images||[]).concat(urls);attached+=urls.length;}};
+  if(!anchorNums.length){
     // no recognizable question numbers anywhere in the PDF's text layer —
     // fall back to position: images land on the question their page ratio points at
     ordered.forEach((o,k)=>{
@@ -1365,26 +1380,31 @@ async function attachImages(pdf,questions,onProg){
     onProg&&onProg('Attached '+ordered.length+' image(s) by position (no question numbers found in the PDF).');
     return;
   }
-  // group image data-URLs by the question-start number they sit beneath
-  const byNum=new Map();
-  const orphans=[];        // figures that appeared before any question-start
-  ordered.forEach(o=>{
-    if(o.num==null){orphans.push(o.dataURL);return;}
-    if(!byNum.has(o.num))byNum.set(o.num,[]);
-    byNum.get(o.num).push(o.dataURL);
-  });
-  // map each anchor number to a question index: prefer the question's own PDF number,
-  // then fall back to ordinal position (k-th question-start == k-th question)
-  const numToQ=new Map();
-  questions.forEach((q,i)=>{const n=parseInt(q.number,10);if(n>0&&!numToQ.has(n))numToQ.set(n,i);});
-  anchorOrder.forEach((num,k)=>{if(!numToQ.has(num)&&questions[k]!==undefined)numToQ.set(num,k);});
-  let attached=0;
-  byNum.forEach((urls,num)=>{
-    let qi=numToQ.has(num)?numToQ.get(num):-1;
-    if(qi<0){const k=anchorOrder.indexOf(num);qi=(k>=0&&questions[k]!==undefined)?k:0;}
-    put(qi,urls);attached+=urls.length;
-  });
-  if(orphans.length){put(0,orphans);attached+=orphans.length;} // no question-start above them → give to the first item
+  // figures before any question-start: keep only ones on/right before the first
+  // question's page (its own figure) — cover pages, logos and seals are dropped
+  const orphans=ordered.filter(o=>o.seq<0&&o.page>=firstAnchorPage-1).map(o=>o.dataURL);
+  const withAnchor=ordered.filter(o=>o.seq>=0);
+  // strategy 1: match by the question numbers printed in the PDF — but only when
+  // numbering is unambiguous on both sides (no duplicates, e.g. sections that
+  // restart at 1) and it actually lines up with the extracted questions
+  const numToQ=new Map();let dupQ=false;
+  questions.forEach((q,i)=>{const n=parseInt(q.number,10);if(n>0){if(numToQ.has(n))dupQ=true;else numToQ.set(n,i);}});
+  const seen=new Set();let dupAnchor=false;
+  anchorNums.forEach(n=>{if(seen.has(n))dupAnchor=true;seen.add(n);});
+  const byNumHits=withAnchor.filter(o=>numToQ.has(o.num)).length;
+  if(!dupQ&&!dupAnchor&&byNumHits>=Math.ceil(withAnchor.length*0.5)){
+    const ord=new Map();anchorNums.forEach((n,k)=>{if(!ord.has(n))ord.set(n,k);}); // ordinal fallback for unmapped numbers
+    withAnchor.forEach(o=>{
+      let qi=numToQ.has(o.num)?numToQ.get(o.num):-1;
+      if(qi<0){const k=ord.get(o.num);qi=(k!==undefined&&questions[k]!==undefined)?k:0;}
+      put(qi,[o.dataURL]);
+    });
+  }else{
+    // strategy 2: reading order — the Nth question-start in the PDF is the Nth
+    // extracted question (safe with restarted/duplicate numbering)
+    withAnchor.forEach(o=>{if(o.seq<questions.length)put(o.seq,[o.dataURL]);});
+  }
+  put(0,orphans); // figure above the first question's number → first item
   onProg&&onProg(attached?('Attached '+attached+' image(s) to their questions.'):'No question images found.');
 }
 
@@ -2231,7 +2251,7 @@ function saveSessionSafe(session){
 function buildSession(){
   return {
     id:state.liveId||uid(), name:state.liveName||state.pdfName||'Untitled', createdAt:Date.now(),
-    mode:state.mode, timerSeconds:TIMER_SECONDS,
+    mode:state.mode, timerSeconds:TIMER_SECONDS, options:collectOptions(),
     questions:state.questions.map(q=>({number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:q.images||[]})),
     order:state.order.slice(),
     attempts:state.attempts.map(a=>({
@@ -2239,6 +2259,7 @@ function buildSession(){
       activeMs:Math.round(a.activeMs), pausedMs:Math.round(a.pausedMs||0),
       visits:a.visits, answerChanges:a.answerChanges, eliminated:a.eliminated,
       flagged:a.flagged, expired:a.expired, highlights:a.highlights, strikes:a.strikes,
+      submitted:!!a.submitted,
       // marked stems keep their HTML so highlights survive if the test is reopened
       stemHTML:((a.highlights&&a.highlights.length)||(a.strikes&&a.strikes.length))?a.stemHTML:null
     }))
@@ -2514,10 +2535,13 @@ function reopenSubmitted(){
     correct:q.correct,explanation:q.explanation,images:(q.images||[]).filter(okImg)}));
   state.pdfName=s.name||'Untitled';state.liveName=s.name||'Untitled';
   state.order=(s.order&&s.order.length)?s.order.slice():state.questions.map((_,i)=>i);
+  // un-grade so nothing is revealed mid-test and ending regrades everything —
+  // except in tutor mode, where already-revealed answers stay locked in
+  const tutor=(s.mode==='tutor');
   state.attempts=(s.attempts||[]).map(a=>Object.assign(
     {selected:null,correctSelected:null,activeMs:0,pausedMs:0,visits:0,answerChanges:[],eliminated:[],
      flagged:false,expired:false,stemHTML:null,highlights:[],strikes:[],submitted:false},a,
-    {correctSelected:null,submitted:false} // un-grade: answers can change again; ending regrades everything
+    tutor?{}:{correctSelected:null,submitted:false}
   ));
   while(state.attempts.length<state.questions.length)
     state.attempts.push({selected:null,correctSelected:null,activeMs:0,pausedMs:0,visits:0,answerChanges:[],
@@ -2526,10 +2550,18 @@ function reopenSubmitted(){
   state.cur=firstOpen>=0?firstOpen:0;
   state.mode=s.mode||'test';state.startedAt=s.createdAt||Date.now();state.reviewMode=false;
   state.liveId=s.id;state.curSession=null;
+  if(s.options){applyOptions(s.options);if(s.options.focusLock)state._rearmFocus=true;} // Focus Lock comes back with the test
+  // neutralize leftover timer state from the ended test so loadQuestion's
+  // stopTimer(bank) can't overwrite this question's real recorded time with
+  // however long the Results screen sat open
+  const a0=state.attempts[state.order[state.cur]];
+  state.tPaused=true;state.tPauseStart=0;state.tAccumMs=a0?(a0.activeMs||0):0;state.tStart=Date.now();
+  try{localStorage.removeItem(LS.last);}catch(e){} // a reload must resume the test, not re-show results
   saveLiveQ();
   returnScreen=null;
   showScreen('exam');loadQuestion(state.cur);
-  toast('Test reopened — nothing was lost. End it again when you’re really done.');
+  const lostImg=s.questions.some(q=>q.hadImage&&!(q.images&&q.images.length));
+  toast(lostImg?'Test reopened — answers and marks kept (figures aren’t stored in History)':'Test reopened — nothing was lost. End it again when you’re really done.');
 }
 $('#reopenBtn').onclick=reopenSubmitted;
 

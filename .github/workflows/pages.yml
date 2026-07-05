@@ -32,8 +32,21 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Stage site files (publish only the app, not repo sources)
+        run: |
+          node -e '
+            const fs = require("fs");
+            const items = ["index.html","flashcards.html","study-buddy.html","master-lock.js",
+              "sw.js","manifest.webmanifest","404.html",".nojekyll","alarm.m4a","icons"];
+            fs.rmSync("_site", { recursive: true, force: true });
+            fs.mkdirSync("_site", { recursive: true });
+            for (const item of items) {
+              if (fs.existsSync(item)) { fs.cpSync(item, "_site/" + item, { recursive: true }); console.log("staged " + item); }
+              else console.warn("WARNING: missing " + item);
+            }
+          '
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -69,34 +69,36 @@ jobs:
             }
           '
 
-      # For tag pushes (desktop-vX.Y.Z), make the package version match the tag
-      # so electron-builder names artifacts and the GitHub Release consistently.
-      - name: Sync version from tag
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+      # Make the package version, artifact names and release tag all agree —
+      # from the pushed desktop-vX.Y.Z tag, or from the manual version input.
+      # --allow-same-version keeps the build working when the tag matches the
+      # version already committed in package.json (e.g. the first release).
+      - name: Sync release version
+        if: startsWith(github.ref, 'refs/tags/desktop-v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
         shell: bash
         working-directory: desktop
-        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#desktop-v}"
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/desktop-v* ]]; then
+            V="${GITHUB_REF_NAME#desktop-v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            V="${{ inputs.version }}"
+            V="${V#desktop-v}"; V="${V#v}"
+            TAG="desktop-v${V}"
+          fi
+          npm version --no-git-tag-version --allow-same-version "$V"
+          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${V}" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         working-directory: desktop
         run: npm install
 
-      # Tag push: build and publish installers straight to a GitHub Release.
-      - name: Build and publish to GitHub Release (tag push)
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
-        working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --publish always
-
-      # Manual run: build only; installers are attached below.
-      - name: Build installers (manual run)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Build installers
         working-directory: desktop
         run: npx electron-builder --publish never
 
-      - name: Upload installers as workflow artifacts (manual run)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: slay-your-own-exam-${{ matrix.os }}
@@ -107,12 +109,14 @@ jobs:
             desktop/dist/*.AppImage
           if-no-files-found: warn
 
-      - name: Create/update GitHub Release (manual run with version input)
-        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+      # One release step for both paths, always on the right tag: the pushed
+      # desktop-v* tag itself, or desktop-v<input version> for manual runs.
+      - name: Create/update GitHub Release
+        if: env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.version }}
-          name: ${{ inputs.version }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Desktop app v${{ env.RELEASE_VERSION }}
           files: |
             desktop/dist/*.exe
             desktop/dist/*.dmg
