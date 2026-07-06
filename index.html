@@ -255,11 +255,11 @@ table.rev th{color:var(--muted);font-weight:600;position:sticky;top:0;background
 .toast.show{opacity:1}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
 @keyframes sp{to{transform:rotate(360deg)}}
-.qimg{max-width:100%;border:1px solid var(--line);border-radius:6px;display:block;margin:12px auto 0}
+.qimg{max-width:100%;max-height:max(340px,62vh);width:auto;height:auto;object-fit:contain;border:1px solid var(--line);border-radius:8px;display:block;margin:12px auto 0;cursor:zoom-in;background:#fff}
 .stemimgs{max-width:880px;margin:14px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:10px}
-.revimgs{padding:8px 10px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line)}
+.revimgs{padding:10px;display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);align-items:flex-start}
 .revimg{position:relative}
-.revimg img{height:88px;border:1px solid var(--line);border-radius:6px;display:block}
+.revimg img{max-height:170px;max-width:min(320px,100%);width:auto;height:auto;object-fit:contain;border:1px solid var(--line);border-radius:8px;display:block;cursor:zoom-in;background:#fff}
 .revimg .x{position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:var(--bad);color:#fff;font-size:12px;line-height:1}
 .rangebox{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .rangebox .f{max-width:150px}
@@ -643,6 +643,72 @@ function sanitizeStemHTML(html){
   return t.innerHTML;
 }
 
+/* ---------- image vault (IndexedDB) ----------
+   Question figures are big base64 JPEGs. localStorage tops out around 5 MB and was
+   silently dropping them — which is why figures showed in review but vanished from
+   the test after a refresh or resume. IndexedDB holds hundreds of MB, so every
+   figure is parked there under its question's id and re-attached on every resume. */
+const IDB_NAME='qbank-images',IDB_STORE='img';
+function idbOpen(){return new Promise((res,rej)=>{
+  const r=indexedDB.open(IDB_NAME,1);
+  r.onupgradeneeded=()=>{r.result.createObjectStore(IDB_STORE);};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+});}
+async function idbImagesSave(questions){ // store each question's figures under its id
+  try{
+    const db=await idbOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(IDB_STORE,'readwrite'),st=tx.objectStore(IDB_STORE);
+      // put-only: a resume path may save while images are momentarily empty (they're
+      // re-attached from this vault a beat later) — never treat that as a removal
+      (questions||[]).forEach(q=>{ if(!q||!q.id)return;
+        if(q.images&&q.images.length)st.put(q.images,q.id);
+      });
+      tx.oncomplete=res;tx.onerror=()=>rej(tx.error);
+    });
+    db.close();
+  }catch(e){console.warn('Image vault save failed:',e);}
+}
+async function idbImagesLoad(questions){ // re-attach stored figures; resolves true if anything came back
+  try{
+    const db=await idbOpen();
+    const found=await new Promise((res,rej)=>{
+      const tx=db.transaction(IDB_STORE,'readonly'),st=tx.objectStore(IDB_STORE);
+      let got=false;
+      (questions||[]).forEach(q=>{ if(!q||!q.id||(q.images&&q.images.length))return;
+        const rq=st.get(q.id);
+        rq.onsuccess=()=>{ const v=rq.result;
+          if(Array.isArray(v)&&v.length){q.images=v.filter(okImg);if(q.images.length)got=true;}
+        };
+      });
+      tx.oncomplete=()=>res(got);tx.onerror=()=>rej(tx.error);
+    });
+    db.close();
+    return found;
+  }catch(e){console.warn('Image vault load failed:',e);return false;}
+}
+async function idbImagesDelete(questions){
+  try{
+    const db=await idbOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(IDB_STORE,'readwrite'),st=tx.objectStore(IDB_STORE);
+      (questions||[]).forEach(q=>{if(q&&q.id)st.delete(q.id);});
+      tx.oncomplete=res;tx.onerror=()=>rej(tx.error);
+    });
+    db.close();
+  }catch(e){}
+}
+/* figures re-attached after an async vault read → refresh whatever screen shows them */
+function refreshImagesOnScreen(){
+  if(state.screen==='exam')renderStemImages();
+  else if(state.screen==='review')renderReview();
+}
+/* click any figure to see it full size */
+function openImageModal(src){
+  if(!okImg(src))return;
+  openModal('Figure','<div style="text-align:center"><img src="'+src+'" alt="Medical figure" style="max-width:100%;max-height:72vh;border-radius:8px"></div>');
+}
+
 /* ---------- settings ---------- */
 let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light'});
 const THEMES=['light','mint','green','ocean','dark'];
@@ -747,6 +813,7 @@ function resumeFromCloudIfAny(){ // offers to pick up an in-progress test left o
     saveLiveQ();saveLiveState();
     if(d.screen==='exam'&&d.order&&d.order.length){showScreen('exam');loadQuestion(state.cur);toast('Resumed your test from another device');}
     else{renderReview();showScreen('review');toast('Resumed your questions from another device');}
+    idbImagesLoad(state.questions).then(got=>{if(got)refreshImagesOnScreen();}); // figures stay on this device's vault
   }).catch(e=>console.warn('Cloud resume check failed:',e));
 }
 function renderAuthUI(){
@@ -923,7 +990,8 @@ function saveLiveQ(){ // questions WITHOUT image bytes — small, so it (almost)
   const qNoImg=state.questions.map(q=>{const c=Object.assign({},q);delete c.images;return c;});
   try{localStorage.setItem(LS.liveQ,JSON.stringify({pdfName:state.pdfName,questions:qNoImg,options:collectOptions()}));}
   catch(e){toast('Storage is full — clear some History so your test can be saved.');return;}
-  // images stored separately and best-effort: if they don't fit, the test still survives
+  // images live in the IndexedDB vault (localStorage kept as a legacy fallback for small sets)
+  idbImagesSave(state.questions);
   const anyImg=state.questions.some(q=>q.images&&q.images.length);
   if(anyImg){
     try{localStorage.setItem(LS.liveImg,JSON.stringify(state.questions.map(q=>q.images||[])));}
@@ -945,8 +1013,9 @@ function saveLiveState(){ // the small, fast-changing exam/progress state — wr
 }
 let _liveQTimer=null;
 function saveLiveQSoon(){clearTimeout(_liveQTimer);_liveQTimer=setTimeout(saveLiveQ,1200);} // debounce review edits
-function clearLive(){
+function clearLive(keepImages){
   try{localStorage.removeItem(LS.live);localStorage.removeItem(LS.liveQ);localStorage.removeItem(LS.liveImg);}catch(e){}
+  if(!keepImages)idbImagesDelete(state.questions); // finished tests keep theirs so Redo gets its figures back
   if(fbEnabled&&curUser)liveDocRef().delete().catch(()=>{});
 }
 function tryResume(){
@@ -966,6 +1035,7 @@ function tryResume(){
   // re-attach images if they were saved
   try{const imgs=JSON.parse(localStorage.getItem(LS.liveImg)||'null');
     if(Array.isArray(imgs))state.questions.forEach((qq,i)=>{qq.images=imgs[i]||[];});}catch(e){}
+  idbImagesLoad(state.questions).then(got=>{if(got)refreshImagesOnScreen();}); // the vault has the full-size figures
   state.pdfName=q.pdfName||'';applyOptions(q.options);
   if(s&&s.screen==='exam'&&Array.isArray(s.order)&&Array.isArray(s.attempts)){
     state.order=s.order;state.attempts=s.attempts;state.cur=Math.min(s.cur||0,s.order.length-1);
@@ -1239,15 +1309,18 @@ async function extractPageImages(page){
     }
   }
   const pageW=viewport.width,pageH=viewport.height;
-  let kept=boxes.filter(b=>{
+  // merge FIRST: many PDFs draw a single figure as a stack of thin slices which would
+  // individually fail the size filter — merged, they become the real full figure
+  // (this was the "sliver" bug: one surviving slice of a sliced-up image)
+  let kept=mergeBoxes(boxes,6*IMG_SCALE).filter(b=>{
     const w=b.x1-b.x0,h=b.y1-b.y0,pw=w/IMG_SCALE,ph=h/IMG_SCALE;
     if(pw<28||ph<28)return false;                 // icons / bullets
+    if(Math.max(w/h,h/w)>10)return false;         // degenerate strip — a rule line, not a figure
     if(w>=0.95*pageW&&h>=0.95*pageH)return false; // full-page background / scan
     if(b.y1<pageH*0.07)return false;              // header band
     if(b.y0>pageH*0.95)return false;              // footer band
     return true;
   });
-  kept=mergeBoxes(kept,6*IMG_SCALE);
   // crop
   const images=[];
   for(const b of kept){
@@ -1378,8 +1451,9 @@ function reviewCard(q,i){
       if(!okImg(src))return;
       const d=document.createElement('div');d.className='revimg';
       const im=document.createElement('img');im.src=src;im.alt='figure';
+      im.title='Click to enlarge';im.onclick=()=>openImageModal(src);
       const x=document.createElement('button');x.className='x';x.title='Remove image';x.textContent='✕';
-      x.onclick=()=>{q.images.splice(j,1);renderReview();};
+      x.onclick=()=>{q.images.splice(j,1);if(!q.images.length)idbImagesDelete([q]);saveLiveQSoon();renderReview();};
       d.appendChild(im);d.appendChild(x);
       ib.appendChild(d);
     });
@@ -1440,6 +1514,17 @@ function startTest(){
 
 function curQ(){return state.questions[state.order[state.cur]];}
 function curA(){return state.attempts[state.order[state.cur]];}
+function renderStemImages(){ // the current question's figures, below the stem — click to enlarge
+  const ib=$('#stemImgs');if(!ib)return;ib.innerHTML='';
+  if(!state.order||!state.order.length)return;
+  const q=curQ();if(!q||!q.images||!q.images.length)return;
+  q.images.filter(okImg).forEach(src=>{
+    const im=document.createElement('img');im.className='qimg';im.src=src;
+    im.alt='Medical figure for this question';im.title='Click to enlarge';
+    im.onclick=()=>openImageModal(src);
+    ib.appendChild(im);
+  });
+}
 
 /* Turn verbatim stem text into clean HTML. Words are never changed — only layout:
    prose reflows into paragraphs; every lab/data line is pulled OUT of the prose and
@@ -1510,8 +1595,7 @@ function loadQuestion(i){
   else stem.innerHTML=renderStem(q.stem);
   bindMarkClicks();
   // medical images for this question
-  const ib=$('#stemImgs');ib.innerHTML='';
-  if(q.images&&q.images.length){q.images.filter(okImg).forEach(src=>{const im=document.createElement('img');im.className='qimg';im.src=src;im.alt='Medical figure for this question';ib.appendChild(im);});}
+  renderStemImages();
   if(state._rearmFocus){state._rearmFocus=false;armFocusLock(false);} // Focus Lock survives a refresh/resume
   // options
   renderOptions(q,a);
@@ -2152,8 +2236,8 @@ function endTest(){
   state.curSession=session;
   // persist (strip images if storage is too full)
   saveSessionSafe(session);
-  // the finished test now lives in History — free the live slot
-  clearLive();state.liveId=null;
+  // the finished test now lives in History — free the live slot (figures stay in the vault for Redo)
+  clearLive(true);state.liveId=null;
   saveJSON(LS.last,{session:session.id,at:Date.now()});
   renderResults(session);
   showScreen('results');
@@ -2174,7 +2258,7 @@ function buildSession(){
   return {
     id:state.liveId||uid(), name:state.liveName||state.pdfName||'Untitled', createdAt:Date.now(),
     mode:state.mode, timerSeconds:TIMER_SECONDS,
-    questions:state.questions.map(q=>({number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:q.images||[]})),
+    questions:state.questions.map(q=>({id:q.id,number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:q.images||[]})),
     order:state.order.slice(),
     attempts:state.attempts.map(a=>({
       selected:a.selected, correctSelected:a.correctSelected,
@@ -2333,7 +2417,7 @@ function stashLiveToHistory(){
     id:state.liveId, status:'inprogress', name:state.liveName||state.pdfName||'Untitled',
     createdAt:state.startedAt||Date.now(), savedAt:Date.now(),
     mode:state.mode, timerSeconds:TIMER_SECONDS, options:collectOptions(),
-    questions:state.questions.map(q=>({number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:[],hadImage:!!(q.images&&q.images.length)})),
+    questions:state.questions.map(q=>({id:q.id,number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:[],hadImage:!!(q.images&&q.images.length)})),
     order:state.order.slice(), cur:state.cur,
     attempts:state.attempts
   };
@@ -2346,7 +2430,7 @@ function stashLiveToHistory(){
 function resumeInProgressSession(id){
   const s=loadJSON(LS.sessions,[]).find(x=>x.id===id);if(!s)return;
   if(state.liveId&&state.liveId!==s.id)stashLiveToHistory(); // park the current one first
-  state.questions=s.questions.map((q,i)=>({id:uid(),idx:i,number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:[]}));
+  state.questions=s.questions.map((q,i)=>({id:q.id||uid(),idx:i,number:q.number,stem:q.stem,options:q.options,correct:q.correct,explanation:q.explanation,images:[]}));
   state.pdfName=s.name||'Untitled';state.liveName=s.name||'Untitled';applyOptions(s.options);
   state.order=(s.order||[]).slice();state.attempts=s.attempts||[];
   state.cur=Math.min(s.cur||0,Math.max(0,state.order.length-1));
@@ -2356,6 +2440,7 @@ function resumeInProgressSession(id){
   saveLiveQ();
   returnScreen=null;
   showScreen('exam');loadQuestion(state.cur);
+  idbImagesLoad(state.questions).then(got=>{if(got)refreshImagesOnScreen();}); // figures come back from the vault
   toast('Resumed — everything is exactly as you left it');
 }
 function sessionProgress(s){ // answered count for an in-progress save
@@ -2410,6 +2495,8 @@ function renderHistory(){
   box.querySelectorAll('[data-redo]').forEach(b=>b.onclick=()=>redoSession(b.dataset.redo));
   box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
     if(!confirm('Delete this session?'))return;
+    const gone=loadJSON(LS.sessions,[]).find(x=>x.id===b.dataset.del);
+    if(gone&&Array.isArray(gone.questions))idbImagesDelete(gone.questions); // free its figures from the vault
     const all=loadJSON(LS.sessions,[]).filter(x=>x.id!==b.dataset.del);saveJSON(LS.sessions,all);
     if(fbEnabled&&curUser)sessionDocRef(b.dataset.del).delete().catch(()=>{});
     renderHistory();
@@ -2420,7 +2507,7 @@ function redoSession(id){
   stashLiveToHistory(); // any in-progress test is archived to History first — nothing is lost
   state.liveId=null;
   // load the questions as a brand-new test; attempts are reset when you press Start
-  state.questions=s.questions.map((q,i)=>({id:uid(),idx:i,number:q.number,stem:q.stem,
+  state.questions=s.questions.map((q,i)=>({id:q.id||uid(),idx:i,number:q.number,stem:q.stem,
     options:q.options,correct:q.correct,explanation:q.explanation,images:(q.images||[]).filter(okImg)}));
   state.pdfName=s.name||'Redo';
   state.order=[];state.attempts=[];state.curSession=null;state.reviewMode=false;
@@ -2429,8 +2516,8 @@ function redoSession(id){
   renderReview();
   state.screen='review';saveLiveState();
   showScreen('review');
-  const hadImg=s.questions.some(q=>(q.images&&q.images.length)||q.hadImage);
-  toast(hadImg?'Loaded for a fresh attempt — set your range and Start (figures aren\u2019t stored in history)':'Loaded for a fresh attempt — set your range and Start');
+  idbImagesLoad(state.questions).then(got=>{if(got)refreshImagesOnScreen();}); // figures come back from the vault
+  toast('Loaded for a fresh attempt — set your range and Start');
 }
 function openSession(id){
   const s=loadJSON(LS.sessions,[]).find(x=>x.id===id);if(!s)return;
