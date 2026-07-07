@@ -414,7 +414,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
 
   <div class="foot">
     <span>Slay Your Own Exam — runs entirely in your browser. Your PDFs and answers never leave your device.</span>
-    <span><span class="dot">●</span> Built for focused board prep</span>
+    <span><span class="dot">●</span> Built for focused board prep · v2026-07-06</span>
   </div>
 </section>
 
@@ -1260,7 +1260,8 @@ function mergeBoxes(boxes,pad){
     changed=false;
     outer:for(let i=0;i<bs.length;i++)for(let j=i+1;j<bs.length;j++){
       if(overlap(bs[i],bs[j])){
-        bs[i]={x0:Math.min(bs[i].x0,bs[j].x0),y0:Math.min(bs[i].y0,bs[j].y0),x1:Math.max(bs[i].x1,bs[j].x1),y1:Math.max(bs[i].y1,bs[j].y1)};
+        bs[i]={x0:Math.min(bs[i].x0,bs[j].x0),y0:Math.min(bs[i].y0,bs[j].y0),x1:Math.max(bs[i].x1,bs[j].x1),y1:Math.max(bs[i].y1,bs[j].y1),
+          segs:(bs[i].segs||0)+(bs[j].segs||0),photo:!!(bs[i].photo||bs[j].photo)}; // ink density + photo flag ride along through merges
         bs.splice(j,1);changed=true;break outer;
       }
     }
@@ -1269,10 +1270,14 @@ function mergeBoxes(boxes,pad){
 }
 async function extractPageImages(page){
   const OPS=pdfjsLib.OPS;
-  const imgOps=new Set([OPS.paintImageXObject,OPS.paintInlineImageXObject,OPS.paintImageXObjectRepeat].filter(v=>v!==undefined));
+  // every way a PDF can paint raster content — including image MASKS, which
+  // screenshots and scans often use (missing these left photos half-detected)
+  const imgOps=new Set([OPS.paintImageXObject,OPS.paintInlineImageXObject,OPS.paintImageXObjectRepeat,
+    OPS.paintImageMaskXObject,OPS.paintImageMaskXObjectGroup,OPS.paintImageMaskXObjectRepeat,
+    OPS.paintJpegXObject].filter(v=>v!==undefined));
   const opList=await page.getOperatorList();
-  let hasImg=false;for(const fn of opList.fnArray){if(imgOps.has(fn)){hasImg=true;break;}}
   const viewport=page.getViewport({scale:IMG_SCALE});
+  const pageW=viewport.width,pageH=viewport.height;
   // text anchors (question-start markers) on this page, in device coords
   const anchors=[];
   try{
@@ -1287,14 +1292,25 @@ async function extractPageImages(page){
     Object.values(lines).forEach(l=>{const m=re.exec(l.t);if(m)anchors.push({num:parseInt(m[1],10),y:l.y});});
     anchors.sort((a,b)=>a.y-b.y);
   }catch(e){}
-  if(!hasImg)return {anchors,images:[]};
-  // render page once
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-  const ctx=canvas.getContext('2d');
-  await page.render({canvasContext:ctx,viewport}).promise;
-  // walk ops to find image placement boxes
-  let ctm=viewport.transform.slice();const stack=[];const boxes=[];
+  /* Walk ops collecting TWO kinds of figure evidence:
+     - photos: embedded raster images (paintImageXObject…)
+     - drawn graphics: vector paths. Fetal-heart tracings, ECGs and charts are
+       usually thousands of tiny line strokes, NOT embedded photos — the old
+       photo-only detector was blind to them (all it caught was a stray raster
+       fragment, which is why a tracing showed up as a thin sliver). */
+  let ctm=viewport.transform.slice();const stack=[];const boxes=[];const paths=[];
+  const pathBBox=(subOps,coords)=>{ // bbox + stroke count of one constructPath, in device coords
+    let i=0,x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,segs=0;
+    const add=(x,y)=>{const p=matApply(ctm,x,y);if(p[0]<x0)x0=p[0];if(p[1]<y0)y0=p[1];if(p[0]>x1)x1=p[0];if(p[1]>y1)y1=p[1];};
+    for(const op of subOps){
+      if(op===OPS.moveTo){add(coords[i],coords[i+1]);i+=2;}
+      else if(op===OPS.lineTo){add(coords[i],coords[i+1]);i+=2;segs++;}
+      else if(op===OPS.curveTo){add(coords[i],coords[i+1]);add(coords[i+2],coords[i+3]);add(coords[i+4],coords[i+5]);i+=6;segs++;}
+      else if(op===OPS.curveTo2||op===OPS.curveTo3){add(coords[i],coords[i+1]);add(coords[i+2],coords[i+3]);i+=4;segs++;}
+      else if(op===OPS.rectangle){add(coords[i],coords[i+1]);add(coords[i]+coords[i+2],coords[i+1]+coords[i+3]);i+=4;segs+=2;}
+    }
+    return isFinite(x0)?{x0,y0,x1,y1,segs}:null;
+  };
   for(let i=0;i<opList.fnArray.length;i++){
     const fn=opList.fnArray[i],args=opList.argsArray[i];
     if(fn===OPS.save)stack.push(ctm.slice());
@@ -1305,27 +1321,48 @@ async function extractPageImages(page){
     else if(imgOps.has(fn)){
       const cs=[[0,0],[1,0],[1,1],[0,1]].map(p=>matApply(ctm,p[0],p[1]));
       const xs=cs.map(p=>p[0]),ys=cs.map(p=>p[1]);
-      boxes.push({x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys)});
+      boxes.push({x0:Math.min.apply(null,xs),y0:Math.min.apply(null,ys),x1:Math.max.apply(null,xs),y1:Math.max.apply(null,ys),segs:0,photo:true});
+    }
+    else if(OPS.constructPath!==undefined&&fn===OPS.constructPath&&args&&args.length>=2){
+      try{
+        const bb=pathBBox(args[0]||[],args[1]||[]);
+        if(bb){
+          const w=bb.x1-bb.x0,h=bb.y1-bb.y0;
+          if(w*h<=0.6*pageW*pageH&&(w>1||h>1))paths.push(bb); // huge = page background / watermark, ignore
+        }
+      }catch(e){}
     }
   }
-  const pageW=viewport.width,pageH=viewport.height;
-  // merge FIRST: many PDFs draw a single figure as a stack of thin slices which would
-  // individually fail the size filter — merged, they become the real full figure
-  // (this was the "sliver" bug: one surviving slice of a sliced-up image)
-  let kept=mergeBoxes(boxes,6*IMG_SCALE).filter(b=>{
+  // keep merge cost bounded on pathological pages
+  let pboxes=paths;
+  if(pboxes.length>600)pboxes=pboxes.sort((a,b)=>((b.x1-b.x0)*(b.y1-b.y0))-((a.x1-a.x0)*(a.y1-a.y0))).slice(0,600);
+  if(!boxes.length&&!pboxes.length)return {anchors,images:[]};
+  // merge FIRST: figures often arrive in slices/strokes that individually fail any
+  // size filter — merged, they become the real full figure (the "sliver" bug)
+  let kept=mergeBoxes(boxes.concat(pboxes),6*IMG_SCALE).filter(b=>{
     const w=b.x1-b.x0,h=b.y1-b.y0,pw=w/IMG_SCALE,ph=h/IMG_SCALE;
-    if(pw<28||ph<28)return false;                 // icons / bullets
-    if(Math.max(w/h,h/w)>10)return false;         // degenerate strip — a rule line, not a figure
-    if(w>=0.95*pageW&&h>=0.95*pageH)return false; // full-page background / scan
-    if(b.y1<pageH*0.07)return false;              // header band
-    if(b.y0>pageH*0.95)return false;              // footer band
+    if(pw<28||ph<28)return false;                                // icons / bullets
+    if(!b.photo&&!((b.segs||0)>=30&&pw*ph>=4000))return false;   // drawn art needs real ink density — filters borders/underlines
+    // a sliver is never a figure: photo strips must merge into their full photo;
+    // only waveform-dense LINE ART (an ECG strip) may legitimately stay that wide
+    if(Math.max(w/h,h/w)>10&&!(!b.photo&&(b.segs||0)>=300))return false;
+    if(w>=0.95*pageW&&h>=0.95*pageH)return false;                // full-page background / scan
+    if(b.y1<pageH*0.07)return false;                             // header band
+    if(b.y0>pageH*0.95)return false;                             // footer band
     return true;
   });
-  // crop
+  if(!kept.length)return {anchors,images:[]};
+  // render the page once, then crop each figure with a little breathing room
+  // so axis labels and scale text stay with their figure
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+  const ctx=canvas.getContext('2d');
+  await page.render({canvasContext:ctx,viewport}).promise;
+  const PAD=10*IMG_SCALE;
   const images=[];
   for(const b of kept){
-    const x0=Math.max(0,Math.floor(b.x0)),y0=Math.max(0,Math.floor(b.y0));
-    const x1=Math.min(canvas.width,Math.ceil(b.x1)),y1=Math.min(canvas.height,Math.ceil(b.y1));
+    const x0=Math.max(0,Math.floor(b.x0-PAD)),y0=Math.max(0,Math.floor(b.y0-PAD));
+    const x1=Math.min(canvas.width,Math.ceil(b.x1+PAD)),y1=Math.min(canvas.height,Math.ceil(b.y1+PAD));
     let w=x1-x0,h=y1-y0;if(w<10||h<10)continue;
     // optional downscale for size
     const maxW=900;let dw=w,dh=h;if(w>maxW){dw=maxW;dh=Math.round(h*maxW/w);}
