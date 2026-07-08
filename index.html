@@ -373,8 +373,9 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
       <div>
         <label class="fld">Extraction method</label>
         <select id="extractMethod">
-          <option value="claude">Claude (recommended — robust verbatim extraction, needs API key)</option>
-          <option value="local">Built-in parser (no key, best for clean numbered Q/A formats)</option>
+          <option value="vision">Claude Vision — reads scanned/image PDFs &amp; pulls figures reliably (recommended, needs API key)</option>
+          <option value="claude">Claude text — fast, for clean text PDFs without pictures (needs API key)</option>
+          <option value="local">Built-in parser (no key, best for clean numbered Q/A formats, no images)</option>
         </select>
       </div>
       <div>
@@ -396,7 +397,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
     <div style="margin-top:8px" class="row">
       <label style="display:flex;gap:7px;align-items:center;font-size:13.5px"><input type="checkbox" id="focusLockOpt"> 🔒 <b>Focus Lock</b> — sound a voice alarm if I leave this tab or click away from the browser; unlock only by saying <i>“I am done with my test”</i></label>
     </div>
-    <p class="note" style="margin-top:10px">Per-question timer is fixed at <b>1:30 (90s)</b> with a pause button on every question, as you asked. Your extracted questions and test progress are saved in this browser automatically — refreshing or hitting Back won't lose them. Scanned/image PDFs have no selectable text — if extraction comes back empty, use a text-based PDF or an OCR tool first.</p>
+    <p class="note" style="margin-top:10px">Per-question timer is fixed at <b>1:30 (90s)</b> with a pause button on every question, as you asked. Your extracted questions and test progress are saved in this browser automatically — refreshing or hitting Back won't lose them. Scanned or image-only PDFs work too: <b>Claude Vision</b> reads the pages directly and pulls each figure into its question — no OCR needed.</p>
   </div>
 
   <div class="card pad" style="margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -414,7 +415,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
 
   <div class="foot">
     <span>Slay Your Own Exam — runs entirely in your browser. Your PDFs and answers never leave your device.</span>
-    <span><span class="dot">●</span> Built for focused board prep · v2026-07-06</span>
+    <span><span class="dot">●</span> Built for focused board prep · v2026-07-08</span>
   </div>
 </section>
 
@@ -1095,9 +1096,13 @@ async function handleFile(file){
     }
     state.pdfText=txt.trim();
     const chars=state.pdfText.length;
+    const sparse=chars<40*pdf.numPages; // little/no selectable text ⇒ scanned or image-only
     if(chars<40){
-      $('#setupStatus').textContent='⚠ Almost no selectable text found ('+chars+' chars). This looks like a scanned/image PDF. Run it through OCR first, then re-upload.';
+      // scanned / image-only: no OCR needed — Claude Vision reads the page images directly
+      const sel=$('#extractMethod');if(sel)sel.value='vision';
+      $('#setupStatus').textContent='📷 This looks like a scanned/image PDF (no selectable text). No problem — "Claude Vision" is selected below; it reads the pages directly (needs your API key). Click Extract.';
     }else{
+      if(sparse){const sel=$('#extractMethod');if(sel&&sel.value!=='local')sel.value='vision';}
       $('#setupStatus').textContent='✓ Loaded '+pdf.numPages+' pages, '+chars.toLocaleString()+' characters. Ready to extract.';
     }
     $('#extractBox').classList.remove('hidden');
@@ -1111,7 +1116,9 @@ async function handleFile(file){
    2. QUESTION EXTRACTION  (Claude verbatim  OR  local parser)
    ========================================================================= */
 $('#extractBtn').onclick=async()=>{
-  if(!state.pdfText){toast('Upload a PDF first');return;}
+  // vision reads page images, so it needs the PDF but NOT selectable text (scanned PDFs have none)
+  if(!state.pdfDoc){toast('Upload a PDF first');return;}
+  if($('#extractMethod').value!=='vision'&&!state.pdfText){toast('No selectable text in this PDF — switch to Claude Vision to read it.');return;}
   state.mode=$('#testMode').value;
   const method=$('#extractMethod').value;
   const st=$('#extractStatus');
@@ -1121,6 +1128,12 @@ $('#extractBtn').onclick=async()=>{
     if(method==='local'){
       st.innerHTML='Parsing locally …';
       qs=localParse(state.pdfText);
+    }else if(method==='vision'){
+      if(!settings.apiKey){st.innerHTML='Add your API key in Settings first (or switch to the built-in parser).';$('#extractBtn').disabled=false;return;}
+      if(!state.pdfDoc){st.innerHTML='Upload a PDF first.';$('#extractBtn').disabled=false;return;}
+      if(state.pdfDoc.numPages>30&&!confirm('This PDF has '+state.pdfDoc.numPages+' pages. Claude Vision reads every page as an image (a few cents per page). Continue?')){$('#extractBtn').disabled=false;return;}
+      st.innerHTML='<span class="spin"></span> Reading the pages with Claude Vision …';
+      qs=await claudeVisionExtract(state.pdfDoc,m=>st.innerHTML='<span class="spin"></span> '+m);
     }else{
       if(!settings.apiKey){st.innerHTML='Add your API key in Settings first (or switch to the built-in parser).';$('#extractBtn').disabled=false;return;}
       st.innerHTML='<span class="spin"></span> Extracting verbatim with Claude …';
@@ -1131,8 +1144,8 @@ $('#extractBtn').onclick=async()=>{
     stashLiveToHistory(); // an in-progress test is archived to History before this new set replaces it
     state.order=[];state.attempts=[];state.liveId=null;state.curSession=null;
     state.questions=qs;
-    // medical images
-    if($('#grabImages').checked&&state.pdfDoc){
+    // Vision already attached each figure inline. The other methods use the older op-parse.
+    if(method!=='vision'&&$('#grabImages').checked&&state.pdfDoc){
       try{
         st.innerHTML='<span class="spin"></span> Finding images in the PDF …';
         await attachImages(state.pdfDoc,qs,$('#verifyImages').checked,m=>st.innerHTML='<span class="spin"></span> '+m);
@@ -1241,6 +1254,98 @@ async function anthropic(model,system,messages,maxTokens=4096){
   }
   const data=await r.json();
   return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+}
+
+/* =========================================================================
+   2v. CLAUDE VISION EXTRACTION  (renders each page to an image and lets Claude
+       read it — works on SCANNED / image-only PDFs that have no selectable text,
+       AND locates each question's figure so we crop it cleanly from the page.
+       This replaces the brittle draw-op parsing + printed-number matching that
+       used to drop figures on real exam PDFs.)
+   ========================================================================= */
+async function renderPageForVision(page){
+  // high-res render we crop figures from …
+  const base=page.getViewport({scale:1});
+  const scale=Math.min(2400/Math.max(base.width,base.height),3)||1.5;
+  const viewport=page.getViewport({scale:Math.max(1,scale)});
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  // … and a smaller copy to send to the API (long edge ≤1568 keeps tokens/cost sane)
+  const apiMax=1568;let aw=canvas.width,ah=canvas.height;
+  if(Math.max(aw,ah)>apiMax){const s=apiMax/Math.max(aw,ah);aw=Math.round(aw*s);ah=Math.round(ah*s);}
+  const ac=document.createElement('canvas');ac.width=aw;ac.height=ah;
+  ac.getContext('2d').drawImage(canvas,0,0,aw,ah);
+  return {canvas,apiURL:ac.toDataURL('image/jpeg',0.82)};
+}
+function cropNormalizedBox(canvas,box){
+  // accept [x0,y0,x1,y1] or {x0,y0,x1,y1} or {x,y,w,h}; accept 0-1, 0-100, 0-1000 scales
+  let a;
+  if(Array.isArray(box))a=box.slice(0,4).map(Number);
+  else if(box&&box.x0!=null)a=[box.x0,box.y0,box.x1,box.y1].map(Number);
+  else if(box&&box.x!=null&&box.w!=null)a=[box.x,box.y,box.x+box.w,box.y+box.h].map(Number);
+  else return null;
+  if(a.some(v=>!isFinite(v)))return null;
+  const mx=Math.max.apply(null,a.map(Math.abs));
+  const div=mx>100?1000:(mx>1.5?100:1);
+  let[x0,y0,x1,y1]=a.map(v=>v/div);
+  if(x1<x0)[x0,x1]=[x1,x0]; if(y1<y0)[y0,y1]=[y1,y0];
+  if((x1-x0)<0.03||(y1-y0)<0.03)return null; // degenerate/sliver box from a mis-localization — drop it
+  const pad=0.015; // a hair of margin so axis labels/scale bars aren't clipped
+  x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(1,x1+pad);y1=Math.min(1,y1+pad);
+  const sx=Math.floor(x0*canvas.width),sy=Math.floor(y0*canvas.height);
+  const sw=Math.ceil((x1-x0)*canvas.width),sh=Math.ceil((y1-y0)*canvas.height);
+  if(sw<24||sh<24)return null;                          // too small to be a real figure
+  if(sw>=canvas.width*0.99&&sh>=canvas.height*0.99)return null; // whole page ≠ a figure
+  const maxW=1000;let dw=sw,dh=sh;if(sw>maxW){dw=maxW;dh=Math.round(sh*maxW/sw);}
+  const cc=document.createElement('canvas');cc.width=dw;cc.height=dh;
+  cc.getContext('2d').drawImage(canvas,sx,sy,sw,sh,0,0,dw,dh);
+  return cc.toDataURL('image/jpeg',0.85);
+}
+const VISION_SYS="You transcribe EXISTING multiple-choice exam questions from images of exam pages. Copy every word EXACTLY and verbatim — do not paraphrase, summarize, fix typos, translate, or invent. Include every answer option. Give the correct answer ONLY if the page visibly marks it (answer key, a check/circle/bold, or a stated explanation); otherwise null. Output ONLY JSON, no prose, no code fences.";
+async function claudeVisionExtract(pdf,onProg){
+  const N=pdf.numPages,BATCH=2;
+  const batches=[];for(let p=1;p<=N;p+=BATCH)batches.push({start:p,end:Math.min(N,p+BATCH-1)});
+  let done=0;
+  const perBatch=await pMapLimit(batches,3,async(b)=>{
+    const rendered=[];
+    for(let p=b.start;p<=b.end;p++){
+      const page=await pdf.getPage(p);
+      rendered.push(Object.assign({page:p},await renderPageForVision(page)));
+    }
+    const prompt='These are images of pages '+b.start+' through '+b.end+' of an exam PDF. '+
+      'Transcribe EVERY multiple-choice question on them, verbatim. For each question, if it includes a medical figure a student must see — radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, fetal heart tracing, histology/pathology slide, gross specimen, clinical/derm/fundus photo, gram stain, graph, or diagram — set "figure" to {"page": <the page number that figure is printed on>, "box": [x0,y0,x1,y1]} where the box is the figure’s rectangle as fractions of THAT page from the top-left corner (0,0) to bottom-right (1,1). Exclude surrounding text from the box — tightly bound the image itself. If a question has no figure, set "figure" to null. '+
+      'Output ONLY this JSON: {"questions":[{"number":"<printed number or empty>","stem":"<verbatim vignette + lead-in>","options":[{"letter":"A","text":"<verbatim>"}],"correct":"A or null","explanation":"<verbatim or empty>","figure":null}]}';
+    const content=[{type:'text',text:prompt}];
+    rendered.forEach(rp=>{
+      content.push({type:'text',text:'--- PAGE '+rp.page+' ---'});
+      const m=/^data:(.*?);base64,(.*)$/.exec(rp.apiURL);
+      if(m)content.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});
+    });
+    let qs=[];
+    try{
+      const resp=await anthropic(settings.extractModel,VISION_SYS,[{role:'user',content}],8000);
+      const obj=parseJSON(resp);
+      qs=(obj&&Array.isArray(obj.questions))?obj.questions:[];
+    }catch(e){console.error('vision batch '+b.start+'-'+b.end,e);throw e;}
+    // crop each figure from its page's high-res canvas
+    qs.forEach(q=>{
+      const f=q&&q.figure;
+      if(f&&f.box){
+        const rp=rendered.find(r=>r.page===(parseInt(f.page,10)||b.start))||rendered[0];
+        if(rp){const url=cropNormalizedBox(rp.canvas,f.box);if(url)q.images=[url];}
+      }
+    });
+    done+=(b.end-b.start+1);onProg&&onProg('Reading pages with Claude … '+Math.min(done,N)+'/'+N);
+    return qs;
+  });
+  let all=[];perBatch.forEach(a=>{all=all.concat(a);});
+  return all.filter(q=>q&&q.stem&&Array.isArray(q.options)&&q.options.length>=2).map(q=>({
+    number:q.number||'', stem:String(q.stem),
+    options:q.options.map((o,j)=>({letter:o.letter||String.fromCharCode(65+j),text:String(o.text||'')})),
+    correct:q.correct&&/^[A-Ea-e]$/.test(q.correct)?q.correct.toUpperCase():null,
+    explanation:q.explanation||'', images:Array.isArray(q.images)?q.images.filter(okImg):[]
+  }));
 }
 
 /* =========================================================================
