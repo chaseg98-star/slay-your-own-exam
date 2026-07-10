@@ -415,7 +415,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
 
   <div class="foot">
     <span>Slay Your Own Exam — runs entirely in your browser. Your PDFs and answers never leave your device.</span>
-    <span><span class="dot">●</span> Built for focused board prep · v2026-07-08</span>
+    <span><span class="dot">●</span> Built for focused board prep · v2026-07-10</span>
   </div>
 </section>
 
@@ -1314,7 +1314,7 @@ async function claudeVisionExtract(pdf,onProg){
       rendered.push(Object.assign({page:p},await renderPageForVision(page)));
     }
     const prompt='These are images of pages '+b.start+' through '+b.end+' of an exam PDF. '+
-      'Transcribe EVERY multiple-choice question on them, verbatim. For each question, if it includes a medical figure a student must see — radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, fetal heart tracing, histology/pathology slide, gross specimen, clinical/derm/fundus photo, gram stain, graph, or diagram — set "figure" to {"page": <the page number that figure is printed on>, "box": [x0,y0,x1,y1]} where the box is the figure’s rectangle as fractions of THAT page from the top-left corner (0,0) to bottom-right (1,1). Exclude surrounding text from the box — tightly bound the image itself. If a question has no figure, set "figure" to null. '+
+      'Transcribe EVERY multiple-choice question on them, verbatim. For each question, if it includes a medical figure a student must see — radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, fetal heart tracing, histology/pathology slide, gross specimen, clinical/derm/fundus photo, gram stain, graph, or diagram — set "figure" to {"page": <the page number that figure is printed on>, "box": [x0,y0,x1,y1]} where the box is the figure’s rectangle as fractions of THAT page from the top-left corner (0,0) to bottom-right (1,1). Exclude surrounding text from the box — tightly bound the image itself. A figure belongs to EXACTLY ONE question — the single question that directly refers to it (usually the one whose stem says the image is shown). NEVER attach the same figure to more than one question, even when several questions sit near it. If a question has no figure of its own, set "figure" to null. '+
       'Output ONLY this JSON: {"questions":[{"number":"<printed number or empty>","stem":"<verbatim vignette + lead-in>","options":[{"letter":"A","text":"<verbatim>"}],"correct":"A or null","explanation":"<verbatim or empty>","figure":null}]}';
     const content=[{type:'text',text:prompt}];
     rendered.forEach(rp=>{
@@ -1340,6 +1340,15 @@ async function claudeVisionExtract(pdf,onProg){
     return qs;
   });
   let all=[];perBatch.forEach(a=>{all=all.concat(a);});
+  // A figure printed once but claimed by several questions crops to a BYTE-IDENTICAL
+  // JPEG every time (same page canvas + same box → deterministic output). The vision
+  // model sometimes tags one picture onto adjacent questions; keep each distinct crop
+  // on the FIRST question that claims it so a single figure never blankets three.
+  const seenImg=new Set();
+  all.forEach(q=>{
+    if(!q||!Array.isArray(q.images)||!q.images.length)return;
+    q.images=q.images.filter(src=>{ if(seenImg.has(src))return false; seenImg.add(src); return true; });
+  });
   return all.filter(q=>q&&q.stem&&Array.isArray(q.options)&&q.options.length>=2).map(q=>({
     number:q.number||'', stem:String(q.stem),
     options:q.options.map((o,j)=>({letter:o.letter||String.fromCharCode(65+j),text:String(o.text||'')})),
