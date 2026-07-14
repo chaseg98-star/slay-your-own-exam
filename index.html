@@ -148,6 +148,25 @@ a{color:var(--accent-d)}
 .labtable td.lh{font-weight:700;color:var(--ink);padding-top:9px}
 .labtable tr.subgroup td.lk{padding-left:16px}
 .leadin{font-weight:600;margin-top:14px}
+/* auto lab-values sidebar — normal ranges for whatever labs are on screen */
+.labside{position:fixed;top:50%;right:14px;transform:translateY(-50%);
+  width:236px;max-width:34vw;max-height:78vh;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);z-index:35;overflow:hidden}
+.labside .lshead{display:flex;align-items:center;gap:7px;padding:9px 11px;
+  border-bottom:1px solid var(--line);background:var(--soft);cursor:pointer;user-select:none}
+.labside .lstitle{font-weight:700;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-d);flex:1}
+.labside .lscount{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+.labside .lscar{font-size:11px;color:var(--muted);transition:transform .15s}
+.labside .lsbody{overflow-y:auto;padding:2px 0}
+.labside .lsrow{padding:6px 11px;border-bottom:1px solid var(--line)}
+.labside .lsrow:last-child{border-bottom:0}
+.labside .lsname{font-weight:600;font-size:12.5px;color:var(--ink);line-height:1.25}
+.labside .lsval{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--accent-d);margin-top:1px;line-height:1.3}
+.labside .lsfoot{padding:6px 11px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);background:var(--soft);line-height:1.3}
+.labside.collapsed .lsbody,.labside.collapsed .lsfoot{display:none}
+.labside.collapsed .lscar{transform:rotate(-90deg)}
+@media(max-width:900px){.labside{display:none!important}}
 .opts{max-width:880px;margin:16px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:6px}
 .opt{display:flex;align-items:flex-start;gap:12px;border:1px solid transparent;border-radius:12px;padding:11px 12px;
   background:transparent;cursor:pointer;transition:background .12s,border-color .12s}
@@ -488,6 +507,15 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
         <span class="lg"><span class="sw"></span> Unanswered</span>
       </div>
     </div>
+    <aside class="labside hidden" id="labSide" aria-label="Normal lab values for this question">
+      <div class="lshead" id="labSideHead" title="Click to collapse / expand">
+        <span class="lstitle">Normal values</span>
+        <span class="lscount" id="labSideCount"></span>
+        <span class="lscar">▾</span>
+      </div>
+      <div class="lsbody" id="labSideBody"></div>
+      <div class="lsfoot">Auto-detected from this question · defer to any values the question gives.</div>
+    </aside>
     <div class="exbottom">
       <button class="btn ghost sm" id="prevBtn">‹ Previous</button>
       <button class="btn sm" id="nextBtn">Next ›</button>
@@ -877,6 +905,7 @@ function showScreen(name){
     $('#screen-'+s).classList.toggle('hidden',s!==name);
   });
   if(name==='setup')renderResumeCard();
+  if(name!=='exam'){const p=$('#labSide');if(p)p.classList.add('hidden');}
   window.scrollTo(0,0);
 }
 /* is there an unfinished test loaded right now? */
@@ -1736,6 +1765,8 @@ function loadQuestion(i){
   if(a.stemHTML!=null)stem.innerHTML=sanitizeStemHTML(a.stemHTML);
   else stem.innerHTML=renderStem(q.stem);
   bindMarkClicks();
+  // normal reference ranges for whatever labs this question mentions
+  renderLabSidebar();
   // medical images for this question
   renderStemImages();
   if(state._rearmFocus){state._rearmFocus=false;armFocusLock(false);} // Focus Lock survives a refresh/resume
@@ -1963,6 +1994,11 @@ function showFeedback(q,a){
 
 /* ---- lab values & calculator ---- */
 $('#labBtn').onclick=()=>openLabs();
+(function(){const h=$('#labSideHead');if(!h)return;h.onclick=()=>{
+  const p=$('#labSide');const c=!p.classList.contains('collapsed');
+  p.classList.toggle('collapsed',c);
+  try{localStorage.setItem('qbank.labside.collapsed',c?'1':'0');}catch(e){}
+};})();
 $('#calcBtn').onclick=()=>openCalc();
 const LAB_VALUES=[
   {sec:'Serum / Plasma — Chemistry', rows:[
@@ -2079,6 +2115,116 @@ function openLabs(){
   openModal('Lab values — USMLE reference','<input type="text" id="labSearch" placeholder="Search a lab (sodium, AST, platelet, CD4…)" style="margin-bottom:6px"><div id="labList"></div>');
   const list=$('#labList'); if(list)list.innerHTML=labListHTML('');
   const inp=$('#labSearch'); if(inp)inp.oninput=()=>{const l=$('#labList');if(l)l.innerHTML=labListHTML(inp.value);};
+}
+
+/* ===== Auto lab-values sidebar =====
+   Scan whatever's on screen for lab names and show their normal reference ranges
+   in a side panel, sized to however many labs the question mentions. Pure string
+   matching against the USMLE reference table above — no AI, no network. */
+const LAB_SUP={'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9','⁺':'','⁻':'',
+  '₀':'0','₁':'1','₂':'2','₃':'3','₄':'4','₅':'5','₆':'6','₇':'7','₈':'8','₉':'9'};
+function labNormBase(s){return String(s==null?'':s).replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻₀₁₂₃₄₅₆₇₈₉]/g,c=>LAB_SUP[c]||'').toLowerCase();}
+function labNormAlias(s){return labNormBase(s).replace(/\s+/g,' ').trim();}
+function labNormText(s){return labNormBase(s).replace(/[ ]/g,' ').replace(/\s+/g,' ');}
+// extra abbreviations / synonyms that don't appear inside the reference names themselves
+const LAB_SYNONYMS={
+  'Sodium (Na⁺)':['sodium','na'],
+  'Potassium (K⁺)':['potassium','k'],
+  'Chloride (Cl⁻)':['chloride','cl'],
+  'Bicarbonate (HCO₃⁻)':['bicarbonate','bicarb','hco3','co2'],
+  'Magnesium (Mg²⁺)':['magnesium'],
+  'Phosphorus (inorganic)':['phosphorus','phosphate','po4'],
+  'Calcium':['calcium','ca'],
+  'Creatinine':['creatinine','cr'],
+  'Urea nitrogen (BUN)':['urea nitrogen','bun'],
+  'Hemoglobin':['hemoglobin','haemoglobin','hgb','hb'],
+  'Hematocrit':['hematocrit','haematocrit','hct'],
+  'Hemoglobin A1c':['hemoglobin a1c','hba1c','a1c'],
+  'Platelet count':['platelet','platelets','plt','thrombocyte'],
+  'Leukocyte (WBC) count':['leukocyte','leucocyte','white blood cell','white cell','wbc'],
+  'Erythrocyte (RBC) count':['erythrocyte','red blood cell','red cell','rbc'],
+  'Alanine aminotransferase (ALT)':['alanine aminotransferase','alt','sgpt'],
+  'Aspartate aminotransferase (AST)':['aspartate aminotransferase','ast','sgot'],
+  'Alkaline phosphatase':['alkaline phosphatase','alk phos','alp'],
+  'Bilirubin, total':['total bilirubin','bilirubin'],
+  'Bilirubin, direct':['direct bilirubin','conjugated bilirubin'],
+  'Cholesterol, total':['cholesterol','total cholesterol'],
+  'Cholesterol, HDL':['hdl','hdl cholesterol','hdl-c'],
+  'Cholesterol, LDL':['ldl','ldl cholesterol','ldl-c'],
+  'Triglycerides':['triglycerides','triglyceride'],
+  'Albumin':['albumin'],
+  'Troponin I':['troponin'],
+  'Creatine kinase (CK)':['creatine kinase','ck','cpk'],
+  'Prothrombin time (PT)':['prothrombin time','inr'],
+  'Partial thromboplastin time (PTT)':['partial thromboplastin time','ptt','aptt'],
+  'Glucose, fasting':['fasting glucose','glucose','blood glucose','blood sugar'],
+  'Thyroxine (T₄), free':['free t4','free thyroxine','ft4'],
+  'Thyroxine (T₄), total':['thyroxine','t4'],
+  'Triiodothyronine (T₃), total':['triiodothyronine','t3'],
+  'Uric acid':['uric acid','urate'],
+  'Lactate':['lactate','lactic acid'],
+  'Total iron-binding capacity (TIBC)':['total iron-binding capacity','tibc'],
+  'D-dimer':['d-dimer','d dimer'],
+  'Parathyroid hormone (PTH)':['parathyroid hormone','pth'],
+  'CD4⁺ T-lymphocyte count':['cd4'],
+  'Reticulocyte count':['reticulocyte','retic'],
+  'ESR (Westergren)':['esr','sed rate','sedimentation rate'],
+  'Osmolality':['osmolality','osmolarity'],
+  'Cortisol':['cortisol'],
+  'Ferritin':['ferritin'],
+  'Amylase':['amylase'],
+  'Lipase':['lipase'],
+  'Prolactin':['prolactin'],
+};
+// generic / collision-prone names we skip so units and prose don't trigger false hits
+const LAB_NO_MATCH=new Set(['Pressure','Volume, plasma','Volume, red cell','Cell count',
+  'Gamma globulin','Hemoglobin, plasma','Proteins, total','T₃ resin uptake',
+  '17-Hydroxycorticosteroids','17-Ketosteroids, total','Globulin','Transferrin']);
+function labAliasRx(a){return new RegExp('(?<![a-z0-9])'+a.replace(/[.*+?^${}()|[\]\\-]/g,'\\$&')+'(?![a-z0-9])');}
+const LAB_INDEX=(function(){
+  const claimed=new Set(),seen=new Set(),out=[];
+  const simpleBase=n=>n.replace(/\([^)]*\)/g,' ').replace(/,.*$/,'').replace(/\s+/g,' ').trim().toLowerCase();
+  for(const g of LAB_VALUES)for(const r of g.rows){
+    const name=String(r[0]).trim(),range=r[1],key=name.toLowerCase();
+    if(seen.has(key))continue; seen.add(key);
+    if(LAB_NO_MATCH.has(name))continue;
+    const base=simpleBase(name);
+    const bare=!/[,(]/.test(name);                     // a plain name with no qualifier or abbreviation
+    // a plain duplicate of a concept already claimed by a serum/earlier row (CSF glucose, urine calcium…)
+    if(bare&&claimed.has(base))continue;
+    claimed.add(base);
+    const al=new Set();
+    const noParen=name.replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim();  // keep the comma qualifier
+    if(noParen.length>=3)al.add(labNormAlias(noParen));
+    const pm=name.match(/\(([^)]+)\)/); if(pm){const p=labNormAlias(pm[1]);if(p.length>=2)al.add(p);}
+    (LAB_SYNONYMS[name]||[]).forEach(s=>al.add(labNormAlias(s)));
+    const aliases=[...al].filter(Boolean);
+    if(!aliases.length)continue;
+    out.push({name,range,rxs:aliases.map(labAliasRx)});
+  }
+  return out;
+})();
+function detectLabs(rawText){
+  const t=labNormText(rawText); if(!t)return [];
+  const found=[];
+  for(const e of LAB_INDEX){ if(e.rxs.some(rx=>rx.test(t)))found.push(e); }
+  return found;
+}
+function labSideCollapsed(){try{return localStorage.getItem('qbank.labside.collapsed')==='1';}catch(e){return false;}}
+function renderLabSidebar(){
+  const panel=$('#labSide'); if(!panel)return;
+  if(state.screen!=='exam'){panel.classList.add('hidden');return;}
+  const stem=$('#stem');
+  const text=(stem?stem.textContent:'')+' \n '+(curQ()?curQ().stem:'');
+  const found=detectLabs(text);
+  if(!found.length){panel.classList.add('hidden');return;}
+  const c=$('#labSideCount'); if(c)c.textContent=found.length+(found.length===1?' lab':' labs');
+  const body=$('#labSideBody');
+  if(body)body.innerHTML=found.map(e=>
+    '<div class="lsrow"><div class="lsname">'+esc(e.name)+'</div><div class="lsval">'+esc(e.range)+'</div></div>'
+  ).join('');
+  panel.classList.toggle('collapsed',labSideCollapsed());
+  panel.classList.remove('hidden');
 }
 function openCalc(){
   openModal('Calculator,'.replace(',',''), `<input type="text" id="calcDisp" value="0" readonly>
