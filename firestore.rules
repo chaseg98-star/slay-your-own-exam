@@ -1,0 +1,22 @@
+rules_version = '2';
+// Firestore security rules for Slay Your Own Exam.
+// This file is the source of truth — it must match what is published in
+// Firebase console → Firestore Database → Rules. Verified enforced 2026-07-03:
+// signed-out reads and cross-account reads both return PERMISSION_DENIED.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // finished AND in-progress tests saved to an account.
+    // Private to their owner; the admin email can read/moderate everyone's.
+    match /sessions/{sessionId} {
+      allow read, update, delete: if request.auth != null &&
+        (resource.data.uid == request.auth.uid || request.auth.token.email == 'chase.g98@icloud.com');
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+    }
+    // the continuously-synced live test (every answer/highlight/cross-out).
+    // One doc per account, private to the owner only.
+    match /liveState/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // everything else is denied by default
+  }
+}

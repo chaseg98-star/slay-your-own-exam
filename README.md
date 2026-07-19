@@ -12,7 +12,9 @@ Everything runs **in your browser**. Your PDFs are never uploaded anywhere. By d
 - **Aligned lab panels** — lab/data tables render cleanly instead of as jumbled text.
 - **Full USMLE/NBME lab values** reference sheet with search.
 - **Themes** — Light, Mint, Green, Ocean Blue, Dark.
-- **Durable saves** — your in-progress test survives a refresh. Export/Import a whole test as a `.json` file to move it between devices or versions.
+- **Durable saves** — every answer, highlight, cross-out and flag is saved continuously. Close the tab mid-test and it's waiting in **History** as an in-progress entry (with your % done) — resume exactly where you left off. Export/Import a whole test as a `.json` file to move it between devices or versions.
+- **Focus Lock** — a web version of the FocusLock Mac app. Arm it for a test and leaving the tab (or clicking off the browser) sounds a looping voice alarm (minimum 5-second blast). The only ways out: say **"I am done with my test"** out loud (speech recognition), or a typed emergency fallback. Limits a web page can't escape: it cannot raise your system volume, and closing the tab kills any alarm a website can make.
+- **Clean lab panels** — lab values are pulled out of the vignette into their own "Laboratory values" section between the story and the question, instead of being jumbled through the stem.
 - **AI tutoring** — after a block, get targeted, high-yield feedback based on your answers, timing, what you highlighted, and what you crossed out (uses your own Anthropic API key, entered in Settings).
 - **Accounts (optional)** — sign up / log in to sync every saved test, and every in-progress answer, highlight, and cross-out, to your account in real time so you can pick up on another device. One designated admin account can see every account's saved tests. Off by default; see [Set up accounts](#set-up-accounts-optional) below.
 
@@ -72,6 +74,14 @@ This repo is ready to host as-is. See **DEPLOY** steps in the project chat, or:
 3. Your site goes live at `https://<your-username>.github.io/<repo-name>/`.
 
 `.nojekyll` is included so GitHub Pages serves the files unmodified.
+
+## Security
+
+- **Firestore rules** live in [`firestore.rules`](firestore.rules) and must match what's published in the Firebase console. Verified enforced 2026-07-03: signed-out reads and cross-account reads (tested with a throwaway account) both return `PERMISSION_DENIED`.
+- The `firebaseConfig` in `index.html` is Firebase's *public* web config — it is designed to be public and is not a secret. Data access is controlled entirely by the rules above.
+- A strict **Content-Security-Policy** meta tag limits scripts to this site + the two CDNs (cdnjs, gstatic) and network calls to Firebase/Anthropic — injected or tampered content can't call out anywhere else.
+- Restored test saves (from disk import or cloud sync) are **sanitized** before rendering: stem HTML is whitelist-filtered and images must be real embedded `data:image/*` payloads, so a crafted save file can't run script.
+- Your Anthropic API key never leaves this browser's local storage and is only sent to `api.anthropic.com`.
 
 ## Privacy
 
