@@ -1,0 +1,56 @@
+# Deploys the site to GitHub Pages — and re-creates the Pages site if it was
+# disabled (which happens automatically whenever the repo is made private).
+# Replaces the built-in "deploy from a branch" flow, which broke after the
+# account rename + private/public flip.
+name: Deploy website (GitHub Pages)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # no `environment:` declaration — the auto-created github-pages environment
+    # only lets main deploy, which would block the outage-fix branch; the job
+    # works without it and main deploys keep working after the merge
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Pages (re-enables the site if it was disabled)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Stage site files (publish only the app, not repo sources)
+        run: |
+          node -e '
+            const fs = require("fs");
+            const items = ["index.html","flashcards.html","study-buddy.html","master-lock.js",
+              "sw.js","manifest.webmanifest","404.html",".nojekyll","alarm.m4a","icons"];
+            fs.rmSync("_site", { recursive: true, force: true });
+            fs.mkdirSync("_site", { recursive: true });
+            for (const item of items) {
+              if (fs.existsSync(item)) { fs.cpSync(item, "_site/" + item, { recursive: true }); console.log("staged " + item); }
+              else console.warn("WARNING: missing " + item);
+            }
+          '
+      # attempt-unique artifact name: re-running a failed deploy otherwise finds
+      # two artifacts named "github-pages" in the run and refuses to deploy
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
