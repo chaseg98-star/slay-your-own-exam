@@ -111,6 +111,27 @@ a{color:var(--accent-d)}
 
 /* ---------- exam ---------- */
 .exwrap{display:flex;flex-direction:column;height:calc(100vh - 60px);position:relative}
+/* full screen: the site chrome goes away, every exam control stays */
+body.fsmode .topbar{display:none}
+body.fsmode .exwrap{height:100vh;height:100dvh}
+/* smart lab panel — auto-matched reference ranges beside the question */
+.exmain{flex:1;display:flex;min-height:0}
+.exmain>.exbody{flex:1;min-width:0}
+.labside{width:310px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+  display:flex;flex-direction:column;overflow:hidden}
+.labside.hidden{display:none}
+.labside-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.labside-head b{font-size:13px;letter-spacing:.03em}
+.labside-head .sub{font-size:11.5px;color:var(--muted)}
+.labside-body{overflow:auto;padding:6px 12px 14px}
+.labside-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--accent-d);margin:12px 0 4px}
+.labside-row{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
+.labside-row .n{color:var(--ink)}
+.labside-row .v{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right;white-space:nowrap}
+.labside-empty{font-size:12.5px;color:var(--muted);padding:14px 0;line-height:1.5}
+.labside-x{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px}
+@media (max-width:900px){ .labside{display:none} .labside.forced{display:flex;position:absolute;right:0;top:0;bottom:0;z-index:45;box-shadow:var(--shadow)} }
 .extop{position:relative;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px 12px;
   background:var(--panel);border-bottom:1px solid var(--line)}
 .extop .qno{font-weight:700;font-size:14px;white-space:nowrap;margin-right:4px}
@@ -146,6 +167,7 @@ a{color:var(--accent-d)}
 .labtable td.lk{color:var(--muted)}
 .labtable td.lv{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:left}
 .labtable td.lh{font-weight:700;color:var(--ink);padding-top:9px}
+.labtable td.lch{font-weight:700;color:var(--ink);white-space:nowrap}
 .labtable tr.subgroup td.lk{padding-left:16px}
 .leadin{font-weight:600;margin-top:14px}
 .opts{max-width:880px;margin:16px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:6px}
@@ -461,8 +483,11 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
       <button class="tool" id="stBtn">— Strike</button>
       <button class="tool" id="eraseBtn">⌫ Clear marks</button>
       <div class="spacer"></div>
+      <button class="tool" id="autoLabBtn" title="Smart labs — automatically shows reference ranges for every lab mentioned in this question">🧪 Smart labs</button>
       <button class="tool" id="labBtn">Lab values</button>
       <button class="tool" id="calcBtn">Calculator</button>
+      <button class="tool" id="exThemeBtn" title="Change theme (works in full screen)">◐ Theme</button>
+      <button class="tool" id="fsBtn" title="Full screen — hides the site bar, keeps every exam control">⛶ Full screen</button>
       <button class="tool" id="focusBtn" title="Focus Lock — voice alarm if you leave this tab; say “I am done with my test” to unlock">🔓 Focus</button>
       <button class="tool" id="pauseBtn">⏸ Pause</button>
       <span class="timer total" id="timerTotal" title="Time left for the whole block — 1:30 × number of questions">Block --:--</span>
@@ -470,13 +495,22 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
       <div class="exprog" id="exProg"></div>
     </div>
 
-    <div class="exbody" id="exBody">
-      <div class="stemwrap">
-        <div class="stem" id="stem"></div>
+    <div class="exmain">
+      <div class="exbody" id="exBody">
+        <div class="stemwrap">
+          <div class="stem" id="stem"></div>
+        </div>
+        <div class="stemimgs" id="stemImgs"></div>
+        <div class="opts" id="opts"></div>
+        <div class="fb hidden" id="feedback"></div>
       </div>
-      <div class="stemimgs" id="stemImgs"></div>
-      <div class="opts" id="opts"></div>
-      <div class="fb hidden" id="feedback"></div>
+      <aside class="labside hidden" id="labSide">
+        <div class="labside-head">
+          <b>🧪 Labs in this question</b>
+          <button class="labside-x" id="labSideClose" title="Hide (reopen with Smart labs)">×</button>
+        </div>
+        <div class="labside-body" id="labSideBody"></div>
+      </aside>
     </div>
 
     <div class="navpanel hidden" id="navPanel">
@@ -626,7 +660,7 @@ function saveJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){to
 function okImg(src){return typeof src==='string'&&/^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(src);}
 /* stem HTML is stored so highlights survive; sanitize on restore so a tampered save/import can never run code */
 const STEM_OK_TAGS={P:1,SPAN:1,DIV:1,TABLE:1,TBODY:1,THEAD:1,TR:1,TD:1,TH:1,B:1,I:1,EM:1,STRONG:1,BR:1,U:1};
-const STEM_OK_CLASSES={hl:1,st:1,labblock:1,labhead:1,labwrap:1,labtable:1,lk:1,lv:1,lh:1,subgroup:1,leadin:1};
+const STEM_OK_CLASSES={hl:1,st:1,labblock:1,labhead:1,labwrap:1,labtable:1,lk:1,lv:1,lh:1,lch:1,subgroup:1,leadin:1};
 function sanitizeStemHTML(html){
   const t=document.createElement('template');t.innerHTML=String(html||'');
   let bad;
@@ -711,7 +745,8 @@ function openImageModal(src){
 }
 
 /* ---------- settings ---------- */
-let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light'});
+let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light',smartLabs:true});
+if(settings.smartLabs===undefined)settings.smartLabs=true; // on by default, including for existing users
 const THEMES=['light','mint','green','ocean','dark'];
 function applySettingsToUI(){
   $('#apiKey').value=settings.apiKey||'';
@@ -1238,22 +1273,35 @@ function parseJSON(s){
 
 /* ---- Anthropic API (direct browser) ---- */
 async function anthropic(model,system,messages,maxTokens=4096){
-  const r=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{
-      'content-type':'application/json',
-      'x-api-key':settings.apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({model,max_tokens:maxTokens,system,messages})
-  });
-  if(!r.ok){
-    let detail='';try{const e=await r.json();detail=e.error&&e.error.message?e.error.message:JSON.stringify(e);}catch(_){detail=await r.text();}
-    throw new Error('API '+r.status+': '+detail);
+  /* retried: several vision batches run concurrently, so a single transient
+     429/529 used to kill a whole extraction (and every figure with it) */
+  const RETRIABLE=new Set([408,429,500,502,503,504,529]);
+  let lastErr=null;
+  for(let attempt=0;attempt<3;attempt++){
+    if(attempt)await new Promise(res=>setTimeout(res,1500*Math.pow(3,attempt-1)+Math.random()*500));
+    let r;
+    try{
+      r=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{
+          'content-type':'application/json',
+          'x-api-key':settings.apiKey,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true'
+        },
+        body:JSON.stringify({model,max_tokens:maxTokens,system,messages})
+      });
+    }catch(netErr){lastErr=netErr;continue;} // network hiccup — retry
+    if(!r.ok){
+      let detail='';try{const e=await r.json();detail=e.error&&e.error.message?e.error.message:JSON.stringify(e);}catch(_){detail=await r.text();}
+      lastErr=new Error('API '+r.status+': '+detail);
+      if(RETRIABLE.has(r.status))continue;
+      throw lastErr;
+    }
+    const data=await r.json();
+    return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
   }
-  const data=await r.json();
-  return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+  throw lastErr||new Error('API request failed');
 }
 
 /* =========================================================================
@@ -1303,10 +1351,16 @@ function snapBoxToDetected(nb,rects){
   const area=r=>(r[2]-r[0])*(r[3]-r[1]);
   let u=null;
   for(const r of rects){
+    /* a near-page raster (a scan with margins that slipped the 0.95 filter) always
+       "contains" the model's box and would hijack the snap to the whole page */
+    if(area(r)>=0.7)continue;
     const ov=inter(nb,r);
     if(ov>=0.4*Math.min(area(nb),area(r)))
       u=u?[Math.min(u[0],r[0]),Math.min(u[1],r[1]),Math.max(u[2],r[2]),Math.max(u[3],r[3])]:r.slice();
   }
+  // a union that ballooned far past the model's box grabbed neighboring content,
+  // not the rest of this figure — trust the model's box instead
+  if(u&&area(u)>4*area(nb))return null;
   return u;
 }
 function cropCanvasFrac(canvas,nb){
@@ -1374,7 +1428,8 @@ async function claudeVisionExtract(pdf,onProg){
         const nb=normBox(f.box);
         if(!nb)return;
         const snapped=snapBoxToDetected(nb,rp.figRects);
-        const url=cropCanvasFrac(rp.canvas,snapped||nb);
+        // if the snapped crop is rejected (too big/small), the model's own box still stands
+        const url=cropCanvasFrac(rp.canvas,snapped||nb)||(snapped?cropCanvasFrac(rp.canvas,nb):null);
         if(url)q.images=[url];
       }
     });
@@ -1777,9 +1832,15 @@ function renderStem(text){
   while(leadStart>0&&isLead(paras[leadStart-1]))leadStart--;
   const before=paras.slice(0,leadStart),lead=paras.slice(leadStart);
   const maxCols=labRows.reduce((m,r)=>Math.max(m,r.header?1:r.cells.length),2);
+  /* a first, indented row one cell short of the widest row is the PDF's column
+     headers ("On Admission   2 Days After Admission") — they belong OVER the
+     value columns, with the lab-name column left empty */
+  const firstData=labRows.find(r=>!r.header);
+  if(firstData&&firstData.indent&&dataRows.length>1&&firstData.cells.length===maxCols-1)firstData.colhead=true;
   let tbl='<div class="labblock"><div class="labhead">Laboratory values</div><div class="labwrap"><table class="labtable">';
   for(const r of labRows){
     if(r.header){tbl+='<tr><td class="lh" colspan="'+maxCols+'">'+esc(r.cells[0])+'</td></tr>';continue;}
+    if(r.colhead){tbl+='<tr><td class="lk"></td>'+r.cells.map(c=>'<td class="lch">'+esc(c)+'</td>').join('')+'</tr>';continue;}
     tbl+='<tr'+(r.indent?' class="subgroup"':'')+'>'+r.cells.map((c,ci)=>
       '<td class="'+(ci===0?'lk':'lv')+'">'+esc(c)+'</td>').join('')+'</tr>';
   }
@@ -1818,6 +1879,7 @@ function loadQuestion(i){
   // if tutor already submitted, or review mode → show feedback
   if(state.reviewMode||(state.mode==='tutor'&&a.submitted))showFeedback(q,a);
   renderNavMini();
+  if(settings.smartLabs)renderSmartLabs(); // re-scan for this question's labs
   // timer
   $('#timerTotal').classList.toggle('hidden',state.reviewMode);
   if(!state.reviewMode){resetTimerDisplay();startTimer();}
@@ -2026,6 +2088,189 @@ function showFeedback(q,a){
 
 /* ---- lab values & calculator ---- */
 $('#labBtn').onclick=()=>openLabs();
+
+/* ---- full screen ----
+   The WHOLE document goes fullscreen, not just the exam pane: the Lab values and
+   Calculator modals are siblings of the exam markup, and a fullscreen element only
+   paints its own subtree — fullscreening the pane alone would make them invisible. */
+function fsElement(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
+function fsSupported(){const d=document.documentElement;return !!(d.requestFullscreen||d.webkitRequestFullscreen);}
+async function toggleFullscreen(){
+  const d=document.documentElement;
+  try{
+    if(fsElement()){await (document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen());}
+    else{await (d.requestFullscreen?d.requestFullscreen():d.webkitRequestFullscreen());}
+  }catch(e){console.warn('fullscreen',e);toast('Your browser blocked full screen here');}
+}
+function syncFsUI(){
+  const on=!!fsElement();
+  document.body.classList.toggle('fsmode',on);
+  const b=$('#fsBtn');
+  if(b){b.textContent=on?'⛶ Exit full screen':'⛶ Full screen';b.classList.toggle('on',on);}
+}
+$('#fsBtn').onclick=toggleFullscreen;
+document.addEventListener('fullscreenchange',syncFsUI);
+document.addEventListener('webkitfullscreenchange',syncFsUI);
+if(!fsSupported()){const b=$('#fsBtn');if(b)b.classList.add('hidden');}
+// theme is reachable without the site bar, so full screen isn't a one-way door
+$('#exThemeBtn').onclick=()=>{const i=THEMES.indexOf(settings.theme||'light');setTheme(THEMES[(i+1)%THEMES.length]);toast('Theme: '+(settings.theme.charAt(0).toUpperCase()+settings.theme.slice(1)));};
+
+/* ---- smart labs: auto-detect the labs named in a question and show their ranges ----
+   Built once from LAB_VALUES. Each row gets match terms: its own name, the
+   abbreviation in parentheses, and hand-written synonyms for the phrasings exam
+   stems actually use ("Hgb", "WBC", "plt"). */
+function labNorm(s){ // unicode sub/superscripts and charge signs → plain ascii
+  return String(s)
+    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g,c=>'₀₁₂₃₄₅₆₇₈₉'.indexOf(c))
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c))
+    .replace(/[⁺⁻]/g,'').replace(/[’']/g,'')
+    .toLowerCase();
+}
+const LAB_SYNONYMS={
+  'hemoglobin':['hgb','hb'],
+  'hematocrit':['hct'],
+  'hemoglobin a1c':['a1c','hba1c','glycated hemoglobin','glycosylated hemoglobin'],
+  'leukocyte (wbc) count':['wbc','white blood cell count','white blood cells','leukocyte count','leukocytes','white count'],
+  'erythrocyte (rbc) count':['rbc','red blood cell count'], // not "red blood cells" — every transfusion stem says it
+  'platelet count':['platelets','plt','platelet'],
+  'segmented neutrophils':['neutrophils','segs','pmns','anc','absolute neutrophil count'],
+  'reticulocyte count':['reticulocytes','retic','retic count'],
+  'prothrombin time (pt)':['pt','inr','prothrombin time'],
+  'partial thromboplastin time (ptt)':['ptt','aptt','activated partial thromboplastin'],
+  'esr (westergren)':['esr','sedimentation rate','sed rate'],
+  'sodium (na)':['na','sodium'],
+  'potassium (k)':['k','potassium'],
+  'chloride (cl)':['cl','chloride'],
+  'bicarbonate (hco3)':['hco3','bicarb','bicarbonate','co2 content'],
+  'magnesium (mg2)':['magnesium'], // never 'mg' — it is a unit in every other lab line
+  'urea nitrogen (bun)':['bun','urea nitrogen','blood urea nitrogen'],
+  'creatinine':['cr','creat','serum creatinine'],
+  'alanine aminotransferase (alt)':['alt','sgpt'],
+  'aspartate aminotransferase (ast)':['ast','sgot'],
+  'alkaline phosphatase':['alk phos','alp'],
+  'bilirubin, total':['total bilirubin','bilirubin'],
+  'bilirubin, direct':['direct bilirubin','conjugated bilirubin'],
+  'creatine kinase (ck)':['ck','cpk','creatine kinase'],
+  'troponin i':['troponin','troponin t','trop'],
+  'lactate':['lactic acid','lactate'],
+  'calcium':['ca','calcium'],
+  'phosphorus (inorganic)':['phosphate','phosphorus','phos'],
+  'glucose, fasting':['fasting glucose','fasting blood glucose','fbg'],
+  'glucose, random':['glucose','blood glucose','serum glucose'],
+  'tsh':['tsh','thyroid-stimulating hormone','thyroid stimulating hormone'],
+  'thyroxine (t4), free':['free t4','ft4'],
+  'thyroxine (t4), total':['t4','thyroxine'],
+  'triiodothyronine (t3), total':['t3','triiodothyronine'],
+  'uric acid':['urate','uric acid'],
+  'ferritin':['ferritin'],
+  'total iron-binding capacity (tibc)':['tibc','iron-binding'],
+  'd-dimer':['d dimer','ddimer','d-dimer'],
+  'cd4 t-lymphocyte count':['cd4','cd4 count'],
+  'ph':['ph'],
+  'pco2':['pco2','paco2'],
+  'po2':['po2','pao2'],
+  'albumin':['albumin'],
+  'amylase':['amylase'],
+  'lipase':['lipase'],
+  'cortisol':['cortisol'],
+  'mcv':['mcv','mean corpuscular volume'],
+  'mchc':['mchc'],
+  'mch':['mch'],
+  'osmolality':['osmolality','osm'],
+  'creatinine clearance':['creatinine clearance','crcl'],
+  'body mass index (bmi)':['bmi','body mass index'],
+  'cell count':['csf cell count'],
+  'pressure':['opening pressure','csf pressure']
+};
+/* names too generic to match on their own — "Pressure" would fire on every
+   "blood pressure is 110/80". These match only through their synonyms above. */
+const LAB_BARE_BLOCKED=new Set(['pressure','cell count','proteins, total','volume, plasma','volume, red cell']);
+/* built lazily — LAB_VALUES is declared further down this script, so reading it
+   here at load time would throw before the app finishes booting */
+function buildLabIndex(){
+  const out=[];
+  LAB_VALUES.forEach(g=>g.rows.forEach(r=>{
+    const rawName=String(r[0]).trim();
+    const key=labNorm(rawName);
+    const terms=new Set();
+    if(!LAB_BARE_BLOCKED.has(key)){
+      terms.add(key);
+      // "Leukocyte (WBC) count" also matches "leukocyte count" and "wbc"
+      const noParen=key.replace(/\s*\([^)]*\)\s*/g,' ').replace(/\s+/g,' ').trim();
+      if(noParen)terms.add(noParen);
+      const paren=/\(([^)]+)\)/.exec(key);
+      if(paren&&paren[1].length>=2)terms.add(paren[1].trim());
+    }
+    (LAB_SYNONYMS[key]||[]).forEach(t=>terms.add(labNorm(t)));
+    // a bare comma-qualified name ("Bilirubin, total") also matches its head word
+    // only via synonyms above — never auto-split, that overmatches badly
+    out.push({name:rawName.trim(),range:r[1],sec:g.sec,
+      terms:Array.from(terms).filter(t=>t&&t.length>=2)});
+  }));
+  return out;
+}
+function labTermRegex(t){
+  const esc=t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  // \b doesn't fire next to digits/symbols in terms like "pco2" or "d-dimer",
+  // so bound on non-alphanumerics explicitly
+  if(t.length<=2){
+    // a 1-2 letter abbreviation (K, Na, pH) only counts when an actual VALUE follows,
+    // otherwise unit text ("mg/dL") and stray words match everything.
+    // The optional charge lets "Na+ 138" and "K+ 5.8" through — stems write them that way.
+    return new RegExp('(^|[^a-z0-9])'+esc+'[+\\-]?[\\s:]*(is|was|of)?[\\s:]*[<>≤≥]?\\s*\\d','i');
+  }
+  return new RegExp('(^|[^a-z0-9])'+esc+'([^a-z0-9]|$)','i');
+}
+let LAB_RX=null;
+function getLabRx(){if(!LAB_RX)LAB_RX=buildLabIndex().map(l=>({lab:l,rx:l.terms.map(labTermRegex)}));return LAB_RX;}
+function labsMentionedIn(text){
+  const hay=labNorm(text||'');
+  if(!hay.trim())return [];
+  // fluid-specific panels only apply when the question is actually about that fluid —
+  // otherwise every "glucose" drags in the CSF and 24-hour-urine ranges too
+  const csfCtx=/\b(csf|cerebrospinal|lumbar puncture|spinal fluid)\b/.test(hay);
+  const urineCtx=/\b(urine|urinary|urinalysis|24-h|24 h|per 24|creatinine clearance|bmi|body mass)\b/.test(hay);
+  const hits=[];
+  getLabRx().forEach(e=>{
+    const sec=e.lab.sec;
+    if(/Cerebrospinal/i.test(sec)&&!csfCtx)return;
+    if(/^Urine/i.test(sec)&&!urineCtx)return;
+    if(e.rx.some(rx=>rx.test(hay)))hits.push(e.lab);
+  });
+  // Glucose/Chloride/Calcium appear in several panels; keep only the first (serum
+  // leads LAB_VALUES) so one mention doesn't stack three different "normal" ranges
+  const seen={};return hits.filter(l=>{const k=labNorm(l.name);if(seen[k])return false;seen[k]=1;return true;});
+}
+function renderSmartLabs(){
+  const side=$('#labSide'),body=$('#labSideBody');
+  if(!side||!body)return;
+  const q=curQ&&curQ();
+  const text=q?[q.stem||'',(q.options||[]).map(o=>o.text||'').join(' ')].join(' '):'';
+  const hits=labsMentionedIn(text);
+  if(!hits.length){
+    body.innerHTML='<div class="labside-empty">No lab values detected in this question.<br><br>'+
+      'If this question does show labs and they are missing here, open <b>Lab values</b> for the full searchable sheet.</div>';
+  }else{
+    let html='',lastSec=null;
+    hits.forEach(l=>{
+      if(l.sec!==lastSec){html+='<div class="labside-sec">'+esc(l.sec)+'</div>';lastSec=l.sec;}
+      html+='<div class="labside-row"><span class="n">'+esc(l.name.trim())+'</span><span class="v">'+esc(l.range)+'</span></div>';
+    });
+    body.innerHTML=html;
+  }
+  body.scrollTop=0;
+}
+function setSmartLabs(on){
+  settings.smartLabs=!!on;saveJSON(LS.settings,settings);
+  const side=$('#labSide');
+  if(side){side.classList.toggle('hidden',!on);side.classList.toggle('forced',!!on);}
+  const b=$('#autoLabBtn');if(b)b.classList.toggle('on',!!on);
+  if(on)renderSmartLabs();
+}
+$('#autoLabBtn').onclick=()=>setSmartLabs(!settings.smartLabs);
+$('#labSideClose').onclick=()=>setSmartLabs(false);
+setSmartLabs(settings.smartLabs!==false); // apply the saved preference on load
+syncFsUI();
 $('#calcBtn').onclick=()=>openCalc();
 const LAB_VALUES=[
   {sec:'Serum / Plasma — Chemistry', rows:[
