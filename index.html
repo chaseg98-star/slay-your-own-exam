@@ -1278,7 +1278,7 @@ async function renderPageForVision(page){
   ac.getContext('2d').drawImage(canvas,0,0,aw,ah);
   return {canvas,apiURL:ac.toDataURL('image/jpeg',0.82)};
 }
-function cropNormalizedBox(canvas,box){
+function normBox(box){
   // accept [x0,y0,x1,y1] or {x0,y0,x1,y1} or {x,y,w,h}; accept 0-1, 0-100, 0-1000 scales
   let a;
   if(Array.isArray(box))a=box.slice(0,4).map(Number);
@@ -1291,6 +1291,26 @@ function cropNormalizedBox(canvas,box){
   let[x0,y0,x1,y1]=a.map(v=>v/div);
   if(x1<x0)[x0,x1]=[x1,x0]; if(y1<y0)[y0,y1]=[y1,y0];
   if((x1-x0)<0.03||(y1-y0)<0.03)return null; // degenerate/sliver box from a mis-localization — drop it
+  return [x0,y0,x1,y1];
+}
+/* The model's box is approximate. When the PDF's own draw-ops located real figures on
+   this page, snap to them: any detected figure the model's box points at (their overlap
+   covers most of the detected figure, or vice versa) joins a union that replaces the
+   guess — that union is the figure's TRUE printed extent, which cures half-cut crops. */
+function snapBoxToDetected(nb,rects){
+  if(!nb||!rects||!rects.length)return null;
+  const inter=(a,b)=>{const w=Math.min(a[2],b[2])-Math.max(a[0],b[0]),h=Math.min(a[3],b[3])-Math.max(a[1],b[1]);return w>0&&h>0?w*h:0;};
+  const area=r=>(r[2]-r[0])*(r[3]-r[1]);
+  let u=null;
+  for(const r of rects){
+    const ov=inter(nb,r);
+    if(ov>=0.4*Math.min(area(nb),area(r)))
+      u=u?[Math.min(u[0],r[0]),Math.min(u[1],r[1]),Math.max(u[2],r[2]),Math.max(u[3],r[3])]:r.slice();
+  }
+  return u;
+}
+function cropCanvasFrac(canvas,nb){
+  let[x0,y0,x1,y1]=nb;
   const pad=0.015; // a hair of margin so axis labels/scale bars aren't clipped
   x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(1,x1+pad);y1=Math.min(1,y1+pad);
   const sx=Math.floor(x0*canvas.width),sy=Math.floor(y0*canvas.height);
@@ -1305,20 +1325,34 @@ function cropNormalizedBox(canvas,box){
 const VISION_SYS="You transcribe EXISTING multiple-choice exam questions from images of exam pages. Copy every word EXACTLY and verbatim — do not paraphrase, summarize, fix typos, translate, or invent. Include every answer option. Give the correct answer ONLY if the page visibly marks it (answer key, a check/circle/bold, or a stated explanation); otherwise null. Output ONLY JSON, no prose, no code fences.";
 async function claudeVisionExtract(pdf,onProg){
   const N=pdf.numPages,BATCH=2;
-  const batches=[];for(let p=1;p<=N;p+=BATCH)batches.push({start:p,end:Math.min(N,p+BATCH-1)});
+  // each batch also carries the NEXT page as read-only context, so a question that
+  // runs past the batch boundary — or whose figure is printed on the following
+  // page — is never split in half or stripped of its figure
+  const batches=[];for(let p=1;p<=N;p+=BATCH)batches.push({start:p,end:Math.min(N,p+BATCH-1),ctx:p+BATCH<=N?p+BATCH:null});
   let done=0;
   const perBatch=await pMapLimit(batches,3,async(b)=>{
     const rendered=[];
-    for(let p=b.start;p<=b.end;p++){
+    const pages=[];for(let p=b.start;p<=b.end;p++)pages.push(p);if(b.ctx)pages.push(b.ctx);
+    for(const p of pages){
       const page=await pdf.getPage(p);
-      rendered.push(Object.assign({page:p},await renderPageForVision(page)));
+      const rp=Object.assign({page:p},await renderPageForVision(page));
+      // where the PDF's own draw-ops say figures sit on this page (normalized 0-1);
+      // scanned pages are one big raster, so this is often empty — that's fine
+      rp.figRects=[];
+      try{
+        const det=await analyzePageFigures(page);
+        rp.figRects=det.kept.map(k=>[k.x0/det.pageW,k.y0/det.pageH,k.x1/det.pageW,k.y1/det.pageH]);
+      }catch(e){}
+      rendered.push(rp);
     }
-    const prompt='These are images of pages '+b.start+' through '+b.end+' of an exam PDF. '+
-      'Transcribe EVERY multiple-choice question on them, verbatim. For each question, if it includes a medical figure a student must see — radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, fetal heart tracing, histology/pathology slide, gross specimen, clinical/derm/fundus photo, gram stain, graph, or diagram — set "figure" to {"page": <the page number that figure is printed on>, "box": [x0,y0,x1,y1]} where the box is the figure’s rectangle as fractions of THAT page from the top-left corner (0,0) to bottom-right (1,1). Exclude surrounding text from the box — tightly bound the image itself. If a question has no figure, set "figure" to null. '+
+    const prompt='These are images of pages '+b.start+' through '+b.end+' of an exam PDF'+
+      (b.ctx?(', plus page '+b.ctx+' as CONTEXT ONLY. Transcribe ONLY questions that BEGIN on pages '+b.start+'–'+b.end+'. If one of those questions continues onto page '+b.ctx+', include its full continuation text, and its figure may sit on page '+b.ctx+'; but do NOT transcribe any question that begins on page '+b.ctx+'.'):'.')+
+      ' Transcribe EVERY such multiple-choice question, verbatim. In each stem, PRESERVE the printed line structure with \\n: keep any "Laboratory studies show:"-style header on its own line, and put EACH laboratory/vital value on its own line exactly as printed (test name, then value with units) — never fold lab lines into a prose sentence. '+
+      'For each question, if it includes a medical figure a student must see — radiograph (x-ray/CT/MRI), ultrasound, ECG/EKG, fetal heart tracing, histology/pathology slide, gross specimen, clinical/derm/fundus photo, gram stain, graph, or diagram — set "figure" to {"page": <the page number that figure is printed on>, "box": [x0,y0,x1,y1]} where the box is the figure’s rectangle as fractions of THAT page from the top-left corner (0,0) to bottom-right (1,1). The box must contain the ENTIRE figure edge to edge (err slightly large rather than clipping it); exclude the question text around it. A figure belongs to the question whose stem refers to it (e.g. "shown"); a figure printed between a stem and its answer options belongs to THAT question. If a question has no figure, set "figure" to null. '+
       'Output ONLY this JSON: {"questions":[{"number":"<printed number or empty>","stem":"<verbatim vignette + lead-in>","options":[{"letter":"A","text":"<verbatim>"}],"correct":"A or null","explanation":"<verbatim or empty>","figure":null}]}';
     const content=[{type:'text',text:prompt}];
     rendered.forEach(rp=>{
-      content.push({type:'text',text:'--- PAGE '+rp.page+' ---'});
+      content.push({type:'text',text:'--- PAGE '+rp.page+(rp.page===b.ctx?' (CONTEXT ONLY)':'')+' ---'});
       const m=/^data:(.*?);base64,(.*)$/.exec(rp.apiURL);
       if(m)content.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});
     });
@@ -1328,19 +1362,41 @@ async function claudeVisionExtract(pdf,onProg){
       const obj=parseJSON(resp);
       qs=(obj&&Array.isArray(obj.questions))?obj.questions:[];
     }catch(e){console.error('vision batch '+b.start+'-'+b.end,e);throw e;}
-    // crop each figure from its page's high-res canvas
+    // crop each figure from its page's high-res canvas — ONLY that page; a wrong or
+    // missing page number must never silently crop from a different page (that is
+    // exactly how figures used to land on the wrong question)
     qs.forEach(q=>{
       const f=q&&q.figure;
       if(f&&f.box){
-        const rp=rendered.find(r=>r.page===(parseInt(f.page,10)||b.start))||rendered[0];
-        if(rp){const url=cropNormalizedBox(rp.canvas,f.box);if(url)q.images=[url];}
+        const pg=parseInt(f.page,10);
+        const rp=rendered.find(r=>r.page===pg);
+        if(!rp){console.warn('vision: figure page '+f.page+' not in batch '+b.start+'-'+b.end+' — skipped');return;}
+        const nb=normBox(f.box);
+        if(!nb)return;
+        const snapped=snapBoxToDetected(nb,rp.figRects);
+        const url=cropCanvasFrac(rp.canvas,snapped||nb);
+        if(url)q.images=[url];
       }
     });
     done+=(b.end-b.start+1);onProg&&onProg('Reading pages with Claude … '+Math.min(done,N)+'/'+N);
     return qs;
   });
   let all=[];perBatch.forEach(a=>{all=all.concat(a);});
-  return all.filter(q=>q&&q.stem&&Array.isArray(q.options)&&q.options.length>=2).map(q=>({
+  all=all.filter(q=>q&&q.stem&&Array.isArray(q.options)&&q.options.length>=2);
+  // safety net: if a question still got transcribed by two neighboring batches
+  // (e.g. the model ignored the begin-page rule), keep the better copy, not both
+  const seen={};const deduped=[];
+  for(const q of all){
+    const key=(String(q.number||'').trim()||'~')+'|'+String(q.stem).replace(/\s+/g,' ').slice(0,90).toLowerCase();
+    const prev=seen[key];
+    if(prev){
+      const better=(q.images&&q.images.length&&!(prev.images&&prev.images.length))||String(q.stem).length>String(prev.stem).length*1.15;
+      if(better)deduped[deduped.indexOf(prev)]=q,seen[key]=q;
+      continue;
+    }
+    seen[key]=q;deduped.push(q);
+  }
+  return deduped.map(q=>({
     number:q.number||'', stem:String(q.stem),
     options:q.options.map((o,j)=>({letter:o.letter||String.fromCharCode(65+j),text:String(o.text||'')})),
     correct:q.correct&&/^[A-Ea-e]$/.test(q.correct)?q.correct.toUpperCase():null,
@@ -1373,7 +1429,10 @@ function mergeBoxes(boxes,pad){
   }
   return bs;
 }
-async function extractPageImages(page){
+/* detection core, shared by attachImages (op-parse path) and the vision snap:
+   walks the page's draw-ops and returns question-start anchors plus the merged,
+   filtered figure boxes in device coords at IMG_SCALE (no rendering) */
+async function analyzePageFigures(page){
   const OPS=pdfjsLib.OPS;
   // every way a PDF can paint raster content — including image MASKS, which
   // screenshots and scans often use (missing these left photos half-detected)
@@ -1441,7 +1500,7 @@ async function extractPageImages(page){
   // keep merge cost bounded on pathological pages
   let pboxes=paths;
   if(pboxes.length>600)pboxes=pboxes.sort((a,b)=>((b.x1-b.x0)*(b.y1-b.y0))-((a.x1-a.x0)*(a.y1-a.y0))).slice(0,600);
-  if(!boxes.length&&!pboxes.length)return {anchors,images:[]};
+  if(!boxes.length&&!pboxes.length)return {anchors,kept:[],pageW,pageH,viewport};
   // merge FIRST: figures often arrive in slices/strokes that individually fail any
   // size filter — merged, they become the real full figure (the "sliver" bug)
   let kept=mergeBoxes(boxes.concat(pboxes),6*IMG_SCALE).filter(b=>{
@@ -1456,6 +1515,10 @@ async function extractPageImages(page){
     if(b.y0>pageH*0.95)return false;                             // footer band
     return true;
   });
+  return {anchors,kept,pageW,pageH,viewport};
+}
+async function extractPageImages(page){
+  const {anchors,kept,viewport}=await analyzePageFigures(page);
   if(!kept.length)return {anchors,images:[]};
   // render the page once, then crop each figure with a little breathing room
   // so axis labels and scale text stay with their figure
