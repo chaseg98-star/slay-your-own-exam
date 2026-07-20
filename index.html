@@ -29,6 +29,8 @@
   /* frosted overlay (smart-labs window) — text always uses --ink, so it stays
      the opposite of whatever the theme background is */
   --glass:rgba(255,255,255,.80); --glassline:rgba(28,43,42,.15);
+  /* translucent answer-choice buttons — a frosted card the option sits on */
+  --optbg:rgba(255,255,255,.55); --optbg-h:rgba(255,255,255,.82); --optline:rgba(28,43,42,.12);
   --radius:16px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --grad:linear-gradient(135deg,#1FBFAB 0%,#0E9C8B 100%);
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
@@ -54,6 +56,7 @@
   --accent:#2BC5B4; --accent-d:#1FA093; --wash:#173832; --good:#2BC5B4; --bad:#E08C7E; --bad-wash:#3A2521;
   --flag:#D9A24C; --flag-wash:#38311D; --mark:#77661C; --soft:#1B2C29;
   --glass:rgba(22,36,34,.84); --glassline:rgba(230,240,238,.18);
+  --optbg:rgba(230,240,238,.05); --optbg-h:rgba(230,240,238,.1); --optline:rgba(230,240,238,.14);
   --shadow:0 1px 3px rgba(0,0,0,.4), 0 14px 40px rgba(0,0,0,.3);
   --grad:linear-gradient(135deg,#2BC5B4 0%,#1FA093 100%);
 }
@@ -126,25 +129,36 @@ body.fsmode{overflow:hidden} /* nothing behind the exam may scroll the page itse
 body.examing #masterBtn,body.examing #navFlash,body.examing #navBuddy,
 body.examing #navAdmin,body.examing #navHistory,body.examing #authBtn{display:none !important}
 
-/* smart labs — a frosted window floating over the right margin. It is
-   positioned, never a flex child, so it overlays the question instead of
-   squeezing it. Text uses --ink, i.e. always the opposite of the theme. */
+/* smart labs — an open “wheel” of glass chips floating over the right margin.
+   No card, no frame: each lab is its own translucent chip, the stack fades out
+   at both ends, and scrolled rows tilt away from center like a picker wheel
+   (the transform is set from JS in labWheel()). It is positioned, never a flex
+   child, so it overlays the question instead of squeezing it. Text uses --ink,
+   i.e. always the opposite of the theme. */
 .exmain{flex:1;position:relative;min-height:0;display:flex}
 .exmain>.exbody{flex:1;min-width:0}
-.labside{position:absolute;top:16px;right:18px;max-height:calc(100% - 32px);width:272px;z-index:40;
+.labside{position:absolute;top:16px;right:20px;max-height:calc(100% - 32px);width:236px;z-index:40;
   display:flex;flex-direction:column;overflow:hidden;color:var(--ink);
-  background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
-  border:1px solid var(--glassline);border-radius:14px;box-shadow:var(--shadow)}
+  animation:labside-in .3s ease}
 .labside.hidden{display:none}
-.labside-head{display:flex;align-items:baseline;gap:7px;padding:9px 13px 7px;border-bottom:1px solid var(--glassline)}
-.labside-head b{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);opacity:.75}
-.labside-body{overflow:auto;padding:3px 13px 11px}
-.labside-sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-  color:var(--ink);opacity:.5;margin:10px 0 2px}
+@keyframes labside-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.labside-head{display:flex;justify-content:center;padding:0 0 8px}
+.labside-head b{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink);
+  padding:4px 12px;border-radius:99px;background:var(--glass);border:1px solid var(--glassline);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);opacity:.85}
+.labside-body{overflow:auto;position:relative;padding:14px 4px 18px;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%)}
+.labside-body::-webkit-scrollbar{display:none}
+.labside-sec{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center;
+  color:var(--ink);opacity:.45;margin:8px 0 3px;will-change:transform,opacity}
 /* name over value — a gendered range like "M 13.5–17.5; F 12.0–16.0" is far too
    long to sit beside its label in a narrow panel, and clipping it is useless */
-.labside-row{display:block;padding:5px 0;border-bottom:1px solid var(--glassline)}
-.labside-row:last-child{border-bottom:0}
+.labside-row{display:block;padding:5px 12px 6px;margin:4px 2px;border-radius:12px;
+  background:var(--glass);border:1px solid var(--glassline);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);
+  box-shadow:0 4px 14px rgba(28,43,42,.08);will-change:transform,opacity}
+[data-theme="dark"] .labside-row{box-shadow:0 4px 14px rgba(0,0,0,.3)}
 .labside-row .n{display:block;color:var(--ink);font-size:12px;line-height:1.35}
 .labside-row .v{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;
   color:var(--ink);opacity:.72;font-size:11.5px;line-height:1.4;margin-top:1px;white-space:normal}
@@ -152,7 +166,7 @@ body.examing #navAdmin,body.examing #navHistory,body.examing #authBtn{display:no
    panel on anything below ~1460px. Instead of shrinking the text column (which
    would reflow the question), reserve the panel's strip so the column simply
    sits left of it — same width, same line breaks, just not squeezed. */
-@media (max-width:1460px){ .exmain.labson>.exbody{padding-right:296px} }
+@media (max-width:1300px){ .exmain.labson>.exbody{padding-right:260px} }
 /* below this there is no margin left to float in at all */
 @media (max-width:1040px){ .labside{display:none} .exmain.labson>.exbody{padding-right:0} }
 
@@ -188,12 +202,14 @@ body.examing #navAdmin,body.examing #navHistory,body.examing #authBtn{display:no
   opacity:0;pointer-events:none;transition:opacity .1s .3s;z-index:60;box-shadow:var(--shadow)}
 .tool[data-tip]:hover::after{opacity:1}
 .tool[data-tip]:last-of-type::after,.tool[data-tip].tipleft::after{left:auto;right:0;transform:none}
-.exbody{flex:1;overflow:auto;padding:22px 0 30px}
-.stemwrap{max-width:880px;margin:0 auto;padding:0 16px}
-.stem{font-size:16.5px;line-height:1.72;user-select:text;color:var(--ink)}
-.stem p{margin:0 0 13px}
+.exbody{flex:1;overflow:auto;padding:26px 0 34px}
+.stemwrap{max-width:760px;margin:0 auto;padding:0 20px}
+.stem{font-size:17px;line-height:1.68;letter-spacing:-.004em;font-weight:450;user-select:text;color:var(--ink)}
+.stem p{margin:0 0 14px}
 .stem p:last-child{margin-bottom:0}
-.stem .hl{background:var(--mark);border-radius:2px;padding:0 1px;box-decoration-break:clone}
+/* highlight = a soft rounded bubble that hugs the words, not a flat block */
+.stem .hl{background:var(--mark);border-radius:.55em;padding:.06em .32em;margin:0 -.06em;
+  box-shadow:0 1px 2px rgba(28,43,42,.10);box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .stem .st{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--bad);opacity:.7}
 .labblock{margin:16px 0}
 .labhead{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-d);margin:0 0 6px}
@@ -209,23 +225,27 @@ body.examing #navAdmin,body.examing #navHistory,body.examing #authBtn{display:no
 .labtable td.lch{font-weight:700;color:var(--ink);white-space:nowrap}
 .labtable tr.subgroup td.lk{padding-left:16px}
 .leadin{font-weight:600;margin-top:14px}
-.opts{max-width:880px;margin:16px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:6px}
-.opt{display:flex;align-items:flex-start;gap:12px;border:1px solid transparent;border-radius:12px;padding:11px 12px;
-  background:transparent;cursor:pointer;transition:background .12s,border-color .12s}
-.opt:hover{background:var(--soft)}
-.opt.sel{background:var(--wash);border-color:var(--accent)}
+/* each answer choice is its own translucent, frosted button the option rides on */
+.opts{max-width:760px;margin:22px auto 0;padding:0 20px;display:flex;flex-direction:column;gap:9px}
+.opt{display:flex;align-items:center;gap:13px;border:1px solid var(--optline);border-radius:14px;padding:13px 15px;
+  background:var(--optbg);-webkit-backdrop-filter:blur(10px) saturate(1.3);backdrop-filter:blur(10px) saturate(1.3);
+  box-shadow:0 2px 8px rgba(28,43,42,.05);cursor:pointer;
+  transition:background .14s,border-color .14s,box-shadow .14s,transform .1s}
+.opt:hover{background:var(--optbg-h);border-color:var(--accent);box-shadow:0 6px 18px rgba(28,43,42,.09);transform:translateY(-1px)}
+.opt.sel{background:var(--wash);border-color:var(--accent);box-shadow:0 6px 18px rgba(31,191,171,.14)}
 .opt.sel .lt{background:var(--accent);border-color:var(--accent);color:#fff}
 .opt.elim .otext{text-decoration:line-through;color:var(--muted);opacity:.7}
+.opt.elim{background:var(--optbg);box-shadow:none;transform:none}
 .opt.elim .lt{opacity:.4}
 .opt.correct{background:var(--wash);border-color:var(--accent-d)}
 .opt.correct .lt{background:var(--accent-d);border-color:var(--accent-d);color:#fff}
 .opt.wrong{background:var(--bad-wash);border-color:var(--bad)}
 .opt.wrong .lt{background:var(--bad);border-color:var(--bad);color:#fff}
-.opt .lt{flex:none;width:27px;height:27px;border-radius:50%;border:1.5px solid var(--line);background:var(--panel);
+.opt .lt{flex:none;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--optline);background:var(--panel);
   display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer;transition:background .12s}
-.opt .otext{flex:1;padding-top:2px}
-.opt .elimbtn{flex:none;align-self:center;border:1px solid var(--line);background:var(--panel);color:var(--muted);
-  border-radius:8px;width:26px;height:26px;line-height:1;font-size:12px;transition:color .12s,border-color .12s}
+.opt .otext{flex:1;font-size:15.5px;line-height:1.5;font-weight:500;letter-spacing:-.002em}
+.opt .elimbtn{flex:none;align-self:center;border:1px solid var(--optline);background:transparent;color:var(--muted);
+  border-radius:8px;width:26px;height:26px;line-height:1;font-size:12px;transition:color .12s,border-color .12s,background .12s}
 .opt .elimbtn:hover{color:var(--bad);border-color:var(--bad);background:var(--bad-wash)}
 .opt.elim .elimbtn{color:var(--bad);border-color:var(--bad);background:var(--bad-wash)}
 .opt .stat{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent-d);align-self:center;white-space:nowrap}
@@ -2005,12 +2025,12 @@ function toggleElim(letter){
   renderOptions(curQ(),a);saveLiveState();
 }
 
-/* ---- marking the stem: no modes, no buttons ----
+/* ---- marking the stem: highlight only, no cross-out ----
    select text            → highlight
-   double-click / right-click (two-finger click) → strike through
+   double-click a word    → highlight that word
    click an existing mark → remove it
-   The highlight waits a beat because a double-click also fires mouseup: without
-   the delay every strike would leave a highlight underneath it. */
+   Cross-out (strike) is intentionally NOT available in the vignette — only the
+   answer choices can be eliminated. */
 let pendingHL=null;
 const DBL_GRACE=240;
 function cancelPendingHL(){if(pendingHL){clearTimeout(pendingHL);pendingHL=null;}}
@@ -2027,12 +2047,7 @@ $('#stem').addEventListener('mouseup',()=>{
 $('#stem').addEventListener('dblclick',()=>{
   if(state.reviewMode)return;
   cancelPendingHL();
-  if(liveSelectionInStem())wrapSelection('st');
-});
-$('#stem').addEventListener('contextmenu',e=>{
-  if(state.reviewMode)return;
-  if(!liveSelectionInStem())return;   // no selection → let the normal menu open
-  e.preventDefault();cancelPendingHL();wrapSelection('st');
+  if(liveSelectionInStem())wrapSelection('hl');
 });
 /* clear every mark on this question back to the clean stem */
 $('#eraseBtn').onclick=()=>{
@@ -2348,6 +2363,22 @@ function labsMentionedIn(text){
   // leads LAB_VALUES) so one mention doesn't stack three different "normal" ranges
   const seen={};return hits.filter(l=>{const k=labNorm(l.name);if(seen[k])return false;seen[k]=1;return true;});
 }
+/* the wheel illusion: each chip gets its own perspective + rotateX/scale/fade
+   proportional to its distance from the panel's vertical center, re-applied on
+   every scroll. Per-chip perspective() avoids the browser quirks of a
+   perspective ancestor whose origin scrolls with the content. */
+function labWheel(){
+  const body=$('#labSideBody');if(!body)return;
+  const mid=body.scrollTop+body.clientHeight/2, range=body.clientHeight/2+30;
+  for(const el of body.children){
+    let d=(el.offsetTop+el.offsetHeight/2-mid)/range;
+    d=Math.max(-1,Math.min(1,d));
+    el.style.transform='perspective(620px) rotateX('+(-d*34).toFixed(1)+'deg) scale('+(1-Math.abs(d)*.14).toFixed(3)+')';
+    el.style.opacity=(1-Math.abs(d)*.5).toFixed(2);
+  }
+}
+let labWheelRaf=0;
+function labWheelSoon(){if(labWheelRaf)return;labWheelRaf=requestAnimationFrame(()=>{labWheelRaf=0;labWheel();});}
 /* the panel is entirely automatic: it appears only when this question actually
    names labs, and hides itself otherwise — there is no button and nothing to set */
 function renderSmartLabs(){
@@ -2367,6 +2398,12 @@ function renderSmartLabs(){
   });
   body.innerHTML=html;
   body.scrollTop=0;
+  labWheel();
+  if(!body.dataset.wheel){
+    body.dataset.wheel='1';
+    body.addEventListener('scroll',labWheelSoon,{passive:true});
+    window.addEventListener('resize',labWheelSoon);
+  }
 }
 paintToolIcons();
 syncFsUI();
