@@ -61,19 +61,19 @@ This needs a free [Firebase](https://firebase.google.com) project (Google's back
 5. In the left sidebar: **Project settings (gear icon) → General → Your apps → Add app → Web (`</>`)**. Register the app (no need for Firebase Hosting). Copy the `firebaseConfig` object it shows you.
 6. Open `index.html`, find the block that starts with `const firebaseConfig={` (search for `PASTE_YOUR`), and replace the six placeholder strings with the real values from step 5.
 7. If the admin account should use a different email than `chase.g98@icloud.com`, change the `ADMIN_EMAIL` constant just above `firebaseConfig` **and** the email in the security rules from step 4, then re-publish the rules.
-8. Commit and push — GitHub Pages redeploys automatically. Sign up on the live site with the admin email to get the admin view (an **Admin** button appears in the top bar).
+8. Commit and push — the site redeploys automatically (see [Deploy as a website](#deploy-as-a-website-firebase-hosting)). Sign up on the live site with the admin email to get the admin view (an **Admin** button appears in the top bar).
 
 Until you complete this, the "Sign in" button in the top bar shows "Accounts unavailable" and the app behaves exactly as it did before.
 
-## Deploy as a website (GitHub Pages)
+## Deploy as a website (Firebase Hosting)
 
-This repo is ready to host as-is. See **DEPLOY** steps in the project chat, or:
+The site is hosted on **Firebase Hosting** (free tier), which lets the GitHub repo stay **private** while the website stays public. Every push to `main` redeploys it automatically via the GitHub Action in `.github/workflows/deploy.yml`.
 
-1. Push these files to a GitHub repo.
-2. Repo **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `main`, folder `/ (root)`.
-3. Your site goes live at `https://<your-username>.github.io/<repo-name>/`.
+- **Live site:** `https://slayyourexam.web.app` (also `https://slayyourexam.firebaseapp.com`)
+- **One-time setup** (already done if the site is live): in the repo's **Settings → Secrets and variables → Actions**, add a secret named `FIREBASE_SERVICE_ACCOUNT_SLAYYOUREXAM` containing a Firebase service-account key JSON. The easiest way to create it is to run `npx firebase init hosting:github` locally, or create a key by hand in Google Cloud console → IAM & Admin → Service Accounts (role: **Firebase Hosting Admin**).
+- You can also deploy manually from a checkout: `npx firebase deploy --only hosting`.
 
-`.nojekyll` is included so GitHub Pages serves the files unmodified.
+> **Why not GitHub Pages?** On a free GitHub plan, Pages only publishes from public repos. Firebase Hosting deploys from a private repo just fine — and since this app already uses Firebase for accounts, the `*.web.app` domain is pre-authorized for Firebase Auth.
 
 ## Security
 
