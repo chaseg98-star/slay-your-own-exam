@@ -26,6 +26,9 @@
   --accent:#1FBFAB; --accent-d:#0E9C8B; --wash:#E2F7F3; --good:#0E9C8B; --bad:#D17A6B; --bad-wash:#FAEAE6;
   --flag:#C98A2E; --flag-wash:#FAF1E1; --mark:#FFE94C; --soft:#F0F9F7;
   --shadow:0 1px 2px rgba(28,43,42,.04), 0 14px 40px rgba(28,43,42,.06);
+  /* frosted overlay (smart-labs window) — text always uses --ink, so it stays
+     the opposite of whatever the theme background is */
+  --glass:rgba(255,255,255,.80); --glassline:rgba(28,43,42,.15);
   --radius:16px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --grad:linear-gradient(135deg,#1FBFAB 0%,#0E9C8B 100%);
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
@@ -50,6 +53,7 @@
   --bg:#0F1A19; --panel:#162422; --ink:#E6F0EE; --muted:#93A8A4; --line:#273936;
   --accent:#2BC5B4; --accent-d:#1FA093; --wash:#173832; --good:#2BC5B4; --bad:#E08C7E; --bad-wash:#3A2521;
   --flag:#D9A24C; --flag-wash:#38311D; --mark:#77661C; --soft:#1B2C29;
+  --glass:rgba(22,36,34,.84); --glassline:rgba(230,240,238,.18);
   --shadow:0 1px 3px rgba(0,0,0,.4), 0 14px 40px rgba(0,0,0,.3);
   --grad:linear-gradient(135deg,#2BC5B4 0%,#1FA093 100%);
 }
@@ -110,31 +114,53 @@ a{color:var(--accent-d)}
 .optrow input[type=radio]{margin-top:11px}
 
 /* ---------- exam ---------- */
-.exwrap{display:flex;flex-direction:column;height:calc(100vh - 60px);position:relative}
+/* the exam is a fixed-height column: only .exbody scrolls, so the tool bar and
+   the Previous/Next bar never travel off screen */
+.exwrap{display:flex;flex-direction:column;height:calc(100vh - 52px);height:calc(100dvh - 52px);position:relative;overflow:hidden}
 /* full screen: the site chrome goes away, every exam control stays */
-body.fsmode .topbar{display:none}
+body.fsmode .appbar{display:none}
 body.fsmode .exwrap{height:100vh;height:100dvh}
-/* smart lab panel — auto-matched reference ranges beside the question */
-.exmain{flex:1;display:flex;min-height:0}
+body.fsmode{overflow:hidden} /* nothing behind the exam may scroll the page itself */
+/* mid-test the site nav collapses to Home / Settings / Theme — nothing that
+   invites you off the exam screen */
+body.examing #masterBtn,body.examing #navFlash,body.examing #navBuddy,
+body.examing #navAdmin,body.examing #navHistory,body.examing #authBtn{display:none !important}
+
+/* smart labs — a frosted window floating over the right margin. It is
+   positioned, never a flex child, so it overlays the question instead of
+   squeezing it. Text uses --ink, i.e. always the opposite of the theme. */
+.exmain{flex:1;position:relative;min-height:0;display:flex}
 .exmain>.exbody{flex:1;min-width:0}
-.labside{width:310px;flex:none;border-left:1px solid var(--line);background:var(--panel);
-  display:flex;flex-direction:column;overflow:hidden}
+.labside{position:absolute;top:16px;right:18px;max-height:calc(100% - 32px);width:272px;z-index:40;
+  display:flex;flex-direction:column;overflow:hidden;color:var(--ink);
+  background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid var(--glassline);border-radius:14px;box-shadow:var(--shadow)}
 .labside.hidden{display:none}
-.labside-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
-.labside-head b{font-size:13px;letter-spacing:.03em}
-.labside-head .sub{font-size:11.5px;color:var(--muted)}
-.labside-body{overflow:auto;padding:6px 12px 14px}
-.labside-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-  color:var(--accent-d);margin:12px 0 4px}
-.labside-row{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
-.labside-row .n{color:var(--ink)}
-.labside-row .v{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right;white-space:nowrap}
-.labside-empty{font-size:12.5px;color:var(--muted);padding:14px 0;line-height:1.5}
-.labside-x{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px}
-@media (max-width:900px){ .labside{display:none} .labside.forced{display:flex;position:absolute;right:0;top:0;bottom:0;z-index:45;box-shadow:var(--shadow)} }
-.extop{position:relative;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px 12px;
+.labside-head{display:flex;align-items:baseline;gap:7px;padding:9px 13px 7px;border-bottom:1px solid var(--glassline)}
+.labside-head b{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);opacity:.75}
+.labside-body{overflow:auto;padding:3px 13px 11px}
+.labside-sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink);opacity:.5;margin:10px 0 2px}
+/* name over value — a gendered range like "M 13.5–17.5; F 12.0–16.0" is far too
+   long to sit beside its label in a narrow panel, and clipping it is useless */
+.labside-row{display:block;padding:5px 0;border-bottom:1px solid var(--glassline)}
+.labside-row:last-child{border-bottom:0}
+.labside-row .n{display:block;color:var(--ink);font-size:12px;line-height:1.35}
+.labside-row .v{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--ink);opacity:.72;font-size:11.5px;line-height:1.4;margin-top:1px;white-space:normal}
+/* Keeping the question centred on the whole viewport would run it under the
+   panel on anything below ~1460px. Instead of shrinking the text column (which
+   would reflow the question), reserve the panel's strip so the column simply
+   sits left of it — same width, same line breaks, just not squeezed. */
+@media (max-width:1460px){ .exmain.labson>.exbody{padding-right:296px} }
+/* below this there is no margin left to float in at all */
+@media (max-width:1040px){ .labside{display:none} .exmain.labson>.exbody{padding-right:0} }
+
+/* one tidy exam bar: fixed height, single row, no wrapping, icon tools */
+.extop{position:relative;display:flex;align-items:center;gap:5px;padding:0 14px;height:56px;flex-wrap:nowrap;
   background:var(--panel);border-bottom:1px solid var(--line)}
-.extop .qno{font-weight:700;font-size:14px;white-space:nowrap;margin-right:4px}
+.extop .qno{font-weight:700;font-size:14px;white-space:nowrap;margin-right:2px}
+.toolsep{width:1px;height:22px;background:var(--line);flex:none;margin:0 5px}
 .exprog{position:absolute;left:0;bottom:-1px;height:3px;background:var(--accent);width:0;transition:width .3s;border-radius:0 2px 2px 0;z-index:1}
 .timer{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;font-size:15px;padding:5px 11px;
   border-radius:9px;background:var(--wash);color:var(--accent-d);min-width:74px;text-align:center}
@@ -144,11 +170,24 @@ body.fsmode .exwrap{height:100vh;height:100dvh}
 .timer.total.low{background:var(--flag-wash);color:var(--flag);border-color:transparent}
 .timer.total.warn{background:var(--bad-wash);color:var(--bad);border-color:transparent}
 @media(max-width:700px){.timer.total{display:none}}
-.tool{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:9px;padding:6px 11px;
-  font-size:12.5px;font-weight:500;display:inline-flex;gap:5px;align-items:center;transition:background .12s,color .12s,border-color .12s}
-.tool:hover{background:var(--soft);color:var(--ink)}
+/* square icon buttons — same size, same baseline, never two lines of text */
+.tool{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:10px;
+  width:34px;height:34px;padding:0;flex:none;font-size:15px;line-height:1;position:relative;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:background .12s,color .12s,border-color .12s}
+.tool:hover{background:var(--soft);color:var(--ink);border-color:var(--muted)}
+.tool svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;
+  stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}
+.tool svg .fill{fill:currentColor;stroke:none}
 .tool.on{background:var(--wash);color:var(--accent-d);border-color:var(--accent)}
 .tool.flag.on{background:var(--flag-wash);border-color:var(--flag);color:var(--flag)}
+/* hover label — what each icon does, without printing it on the bar */
+.tool[data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 7px);left:50%;
+  transform:translateX(-50%);background:var(--ink);color:var(--bg);font-size:11.5px;font-weight:600;
+  font-family:var(--sans);white-space:nowrap;padding:4px 9px;border-radius:7px;letter-spacing:.01em;
+  opacity:0;pointer-events:none;transition:opacity .1s .3s;z-index:60;box-shadow:var(--shadow)}
+.tool[data-tip]:hover::after{opacity:1}
+.tool[data-tip]:last-of-type::after,.tool[data-tip].tipleft::after{left:auto;right:0;transform:none}
 .exbody{flex:1;overflow:auto;padding:22px 0 30px}
 .stemwrap{max-width:880px;margin:0 auto;padding:0 16px}
 .stem{font-size:16.5px;line-height:1.72;user-select:text;color:var(--ink)}
@@ -350,8 +389,8 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
   </div>
   <div class="spacer"></div>
   <button class="iconbtn" id="masterBtn" title="Master lock — voice alarm the moment you leave this tab or click off the browser, on any screen. Say “I am done with my test” to unlock.">🔒 Master</button>
-  <a class="iconbtn" href="flashcards.html" style="text-decoration:none;display:inline-flex;align-items:center">🗂 Flashcards</a>
-  <a class="iconbtn" href="study-buddy.html" style="text-decoration:none;display:inline-flex;align-items:center">🎙 Study Buddy</a>
+  <a class="iconbtn" id="navFlash" href="flashcards.html" style="text-decoration:none;display:inline-flex;align-items:center">🗂 Flashcards</a>
+  <a class="iconbtn" id="navBuddy" href="study-buddy.html" style="text-decoration:none;display:inline-flex;align-items:center">🎙 Study Buddy</a>
   <button class="iconbtn" id="navHome" title="Back to the main menu — your test is saved automatically">⌂ Home</button>
   <button class="iconbtn hidden" id="navAdmin">Admin</button>
   <button class="iconbtn" id="navHistory">History</button>
@@ -478,18 +517,17 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
   <div class="exwrap">
     <div class="extop">
       <span class="qno" id="exQno">Item 1 of 1</span>
-      <button class="tool flag" id="flagBtn">⚑ Flag</button>
-      <button class="tool" id="hlBtn">🖊 Highlight</button>
-      <button class="tool" id="stBtn">— Strike</button>
-      <button class="tool" id="eraseBtn">⌫ Clear marks</button>
       <div class="spacer"></div>
-      <button class="tool" id="autoLabBtn" title="Smart labs — automatically shows reference ranges for every lab mentioned in this question">🧪 Smart labs</button>
-      <button class="tool" id="labBtn">Lab values</button>
-      <button class="tool" id="calcBtn">Calculator</button>
-      <button class="tool" id="exThemeBtn" title="Change theme (works in full screen)">◐ Theme</button>
-      <button class="tool" id="fsBtn" title="Full screen — hides the site bar, keeps every exam control">⛶ Full screen</button>
-      <button class="tool" id="focusBtn" title="Focus Lock — voice alarm if you leave this tab; say “I am done with my test” to unlock">🔓 Focus</button>
-      <button class="tool" id="pauseBtn">⏸ Pause</button>
+      <button class="tool flag" id="flagBtn" data-tip="Flag for review">⚑</button>
+      <button class="tool" id="eraseBtn" data-tip="Clear highlights &amp; strikes">⌫</button>
+      <span class="toolsep"></span>
+      <button class="tool" id="labBtn" data-tip="Lab values">🧪</button>
+      <button class="tool" id="calcBtn" data-tip="Calculator">🖩</button>
+      <button class="tool" id="exThemeBtn" data-tip="Theme">◐</button>
+      <span class="toolsep"></span>
+      <button class="tool" id="fsBtn" data-tip="Full screen">⛶</button>
+      <button class="tool" id="focusBtn" data-tip="Focus Lock">🔓</button>
+      <button class="tool tipleft" id="pauseBtn" data-tip="Pause">⏸</button>
       <span class="timer total" id="timerTotal" title="Time left for the whole block — 1:30 × number of questions">Block --:--</span>
       <span class="timer" id="timer" title="Time left on this question">1:30</span>
       <div class="exprog" id="exProg"></div>
@@ -504,11 +542,8 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
         <div class="opts" id="opts"></div>
         <div class="fb hidden" id="feedback"></div>
       </div>
-      <aside class="labside hidden" id="labSide">
-        <div class="labside-head">
-          <b>🧪 Labs in this question</b>
-          <button class="labside-x" id="labSideClose" title="Hide (reopen with Smart labs)">×</button>
-        </div>
+      <aside class="labside hidden" id="labSide" aria-label="Reference ranges for labs in this question">
+        <div class="labside-head"><b>Reference ranges</b></div>
         <div class="labside-body" id="labSideBody"></div>
       </aside>
     </div>
@@ -745,8 +780,7 @@ function openImageModal(src){
 }
 
 /* ---------- settings ---------- */
-let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light',smartLabs:true});
-if(settings.smartLabs===undefined)settings.smartLabs=true; // on by default, including for existing users
+let settings = loadJSON(LS.settings,{apiKey:'',extractModel:'claude-sonnet-4-6',analysisModel:'claude-opus-4-8',theme:'light'});
 const THEMES=['light','mint','green','ocean','dark'];
 function applySettingsToUI(){
   $('#apiKey').value=settings.apiKey||'';
@@ -906,11 +940,47 @@ function renderAdmin(){
 }
 
 /* ---------- screen routing ---------- */
+/* Exam tools are drawn icons, not emoji: emoji glyph coverage is uneven (the
+   calculator character has no glyph on macOS and renders as a blank box) and
+   they cannot take the theme's colour. These inherit currentColor. */
+const SVG=(d)=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+d+'</svg>';
+const ICONS={
+  flag:SVG('<path d="M6 21V4"/><path d="M6 4.6h11.2l-2.1 3.3 2.1 3.3H6z"/>'),
+  erase:SVG('<path d="M8.5 20.5H20"/><path d="M14.2 5.1l4.7 4.7a1.4 1.4 0 010 2l-6.4 6.4h-4L4.9 15a1.4 1.4 0 010-2l7.3-7.9a1.4 1.4 0 012 0z"/>'),
+  flask:SVG('<path d="M9.2 3h5.6"/><path d="M10.3 3.2v6.1L5.4 18.4a1.5 1.5 0 001.3 2.3h10.6a1.5 1.5 0 001.3-2.3l-4.9-9.1V3.2"/><path d="M7.6 14.6h8.8"/>'),
+  calc:SVG('<rect x="4.5" y="3" width="15" height="18" rx="2.2"/><path d="M8 7.2h8"/><path d="M8.4 11.6h.1M12 11.6h.1M15.6 11.6h.1M8.4 15.2h.1M12 15.2h.1M15.6 15.2h.1M8.4 18.4h.1M12 18.4h.1M15.6 18.4h.1"/>'),
+  theme:SVG('<circle cx="12" cy="12" r="8.2"/><path class="fill" d="M12 3.8a8.2 8.2 0 000 16.4z"/>'),
+  full:SVG('<path d="M4 9.2V5.2A1.2 1.2 0 015.2 4h4"/><path d="M14.8 4h4A1.2 1.2 0 0120 5.2v4"/><path d="M20 14.8v4a1.2 1.2 0 01-1.2 1.2h-4"/><path d="M9.2 20h-4A1.2 1.2 0 014 18.8v-4"/>'),
+  unlock:SVG('<rect x="4.8" y="10.8" width="14.4" height="9.4" rx="2.1"/><path d="M8.2 10.8V7.9a3.8 3.8 0 016.8-2.4"/>'),
+  lock:SVG('<rect x="4.8" y="10.8" width="14.4" height="9.4" rx="2.1"/><path d="M8.2 10.8V7.9a3.8 3.8 0 017.6 0v2.9"/>'),
+  pause:SVG('<path d="M9.3 4.8v14.4M14.7 4.8v14.4"/>'),
+  play:SVG('<path class="fill" d="M8.2 4.9l11 7.1-11 7.1z"/>')
+};
+/* an exam tool is an icon plus a hover label — never printed text, so the bar
+   stays one tidy row of same-size buttons */
+function setToolIcon(sel,icon,tip){
+  const b=$(sel);if(!b)return;
+  if(typeof icon==='string'&&icon.charAt(0)==='<')b.innerHTML=icon; // our own constant SVG
+  else b.textContent=icon;
+  if(tip){b.setAttribute('data-tip',tip);b.removeAttribute('title');}
+}
+function paintToolIcons(){
+  setToolIcon('#flagBtn',ICONS.flag,'Flag for review');
+  setToolIcon('#eraseBtn',ICONS.erase,'Clear highlights & strikes');
+  setToolIcon('#labBtn',ICONS.flask,'Lab values');
+  setToolIcon('#calcBtn',ICONS.calc,'Calculator');
+  setToolIcon('#exThemeBtn',ICONS.theme,'Theme');
+  setToolIcon('#fsBtn',ICONS.full,'Full screen');
+  setToolIcon('#focusBtn',ICONS.unlock,'Focus Lock');
+  setToolIcon('#pauseBtn',ICONS.pause,'Pause');
+}
 function showScreen(name){
   state.screen=name;
   ['setup','review','exam','results','history','settings','admin'].forEach(s=>{
     $('#screen-'+s).classList.toggle('hidden',s!==name);
   });
+  // mid-test the site nav collapses to Home / Settings / Theme
+  document.body.classList.toggle('examing',name==='exam');
   if(name==='setup')renderResumeCard();
   window.scrollTo(0,0);
 }
@@ -1879,7 +1949,7 @@ function loadQuestion(i){
   // if tutor already submitted, or review mode → show feedback
   if(state.reviewMode||(state.mode==='tutor'&&a.submitted))showFeedback(q,a);
   renderNavMini();
-  if(settings.smartLabs)renderSmartLabs(); // re-scan for this question's labs
+  renderSmartLabs(); // re-scan for this question's labs; shows itself only if it finds any
   // timer
   $('#timerTotal').classList.toggle('hidden',state.reviewMode);
   if(!state.reviewMode){resetTimerDisplay();startTimer();}
@@ -1887,6 +1957,7 @@ function loadQuestion(i){
   if(!state.reviewMode)saveLiveState();
 }
 
+let elimPrevSel=null; // selection before a click, so a double-click cross-out can restore it
 function renderOptions(q,a){
   const box=$('#opts');box.innerHTML='';
   const reveal=state.reviewMode||(state.mode==='tutor'&&a.submitted);
@@ -1904,6 +1975,21 @@ function renderOptions(q,a){
     if(!reveal){
       el.querySelector('.otext').onclick=el.querySelector('.lt').onclick=()=>selectOpt(o.letter);
       el.querySelector('.elimbtn').onclick=e=>{e.stopPropagation();toggleElim(o.letter);};
+      /* cross out without aiming for the ✕: right-click (two-finger click) or
+         double-click. A double-click's first click also SELECTS the choice, so
+         remember what was selected beforehand and put it back — crossing out
+         must never quietly answer the question for you. */
+      el.onmousedown=()=>{elimPrevSel=curA().selected;};
+      el.oncontextmenu=e=>{e.preventDefault();toggleElim(o.letter);};
+      el.ondblclick=e=>{
+        e.preventDefault();
+        const a=curA();
+        if(a.selected===o.letter&&elimPrevSel!==o.letter){
+          a.selected=elimPrevSel;
+          if(a.answerChanges.length)a.answerChanges.pop(); // and don't log it as an answer change
+        }
+        toggleElim(o.letter);
+      };
     }
     box.appendChild(el);
   });
@@ -1919,22 +2005,44 @@ function toggleElim(letter){
   renderOptions(curQ(),a);saveLiveState();
 }
 
-/* ---- highlight / strikethrough on stem ---- */
-let markMode=null; // 'hl' | 'st' | 'erase' | null
-function setMarkMode(m){markMode=(markMode===m)?null:m;
-  $('#hlBtn').classList.toggle('on',markMode==='hl');
-  $('#stBtn').classList.toggle('on',markMode==='st');
-  $('#eraseBtn').classList.toggle('on',markMode==='erase');
+/* ---- marking the stem: no modes, no buttons ----
+   select text            → highlight
+   double-click / right-click (two-finger click) → strike through
+   click an existing mark → remove it
+   The highlight waits a beat because a double-click also fires mouseup: without
+   the delay every strike would leave a highlight underneath it. */
+let pendingHL=null;
+const DBL_GRACE=240;
+function cancelPendingHL(){if(pendingHL){clearTimeout(pendingHL);pendingHL=null;}}
+function liveSelectionInStem(){
+  const sel=window.getSelection();
+  if(!sel||!sel.rangeCount||sel.isCollapsed)return null;
+  return $('#stem').contains(sel.getRangeAt(0).commonAncestorContainer)?sel:null;
 }
-$('#hlBtn').onclick=()=>setMarkMode('hl');
-$('#stBtn').onclick=()=>setMarkMode('st');
-$('#eraseBtn').onclick=()=>setMarkMode('erase');
-
 $('#stem').addEventListener('mouseup',()=>{
   if(state.reviewMode)return;
-  if(markMode==='hl')wrapSelection('hl');
-  else if(markMode==='st')wrapSelection('st');
+  cancelPendingHL();
+  pendingHL=setTimeout(()=>{pendingHL=null;if(liveSelectionInStem())wrapSelection('hl');},DBL_GRACE);
 });
+$('#stem').addEventListener('dblclick',()=>{
+  if(state.reviewMode)return;
+  cancelPendingHL();
+  if(liveSelectionInStem())wrapSelection('st');
+});
+$('#stem').addEventListener('contextmenu',e=>{
+  if(state.reviewMode)return;
+  if(!liveSelectionInStem())return;   // no selection → let the normal menu open
+  e.preventDefault();cancelPendingHL();wrapSelection('st');
+});
+/* clear every mark on this question back to the clean stem */
+$('#eraseBtn').onclick=()=>{
+  if(state.reviewMode)return;
+  const a=curA(),q=curQ();if(!a||!q)return;
+  cancelPendingHL();
+  a.stemHTML=null;a.highlights=[];a.strikes=[];
+  $('#stem').innerHTML=renderStem(q.stem);
+  bindMarkClicks();saveLiveState();toast('Marks cleared');
+};
 function wrapSelection(cls){
   const sel=window.getSelection();
   if(!sel.rangeCount||sel.isCollapsed)return;
@@ -1951,10 +2059,9 @@ function bindMarkClicks(){
   $$('#stem .hl, #stem .st').forEach(m=>{
     m.onclick=()=>{
       if(state.reviewMode)return;
-      if(markMode==='erase'||true){ // clicking a mark always removes it
-        const parent=m.parentNode;while(m.firstChild)parent.insertBefore(m.firstChild,m);parent.removeChild(m);parent.normalize();
-        persistMarks();bindMarkClicks();
-      }
+      cancelPendingHL(); // this click is an erase, not the start of a new highlight
+      const parent=m.parentNode;while(m.firstChild)parent.insertBefore(m.firstChild,m);parent.removeChild(m);parent.normalize();
+      persistMarks();bindMarkClicks();
     };
   });
 }
@@ -1974,7 +2081,7 @@ function liveMs(){if(state.tPaused)return 0;return Date.now()-state.tStart-(stat
 function resetTimerDisplay(){const a=curA();state.tAccumMs=a.activeMs;}
 function startTimer(){
   state.tPaused=false;state.tStart=Date.now();state.tPauseStart=0;
-  $('#pauseBtn').textContent='⏸ Pause';$('#timer').classList.remove('paused');
+  setToolIcon('#pauseBtn',ICONS.pause,'Pause');$('#timer').classList.remove('paused');
   tick();
 }
 function updateTotalTimer(curElapsed){ // block clock: 1:30 × questions, minus every second spent so far
@@ -2021,13 +2128,13 @@ $('#pauseBtn').onclick=()=>{
   const a=curA();
   if(state.tPaused){ // resume
     state.tPaused=false;state.tStart=Date.now();
-    $('#pauseBtn').textContent='⏸ Pause';$('#timer').classList.remove('paused');
+    setToolIcon('#pauseBtn',ICONS.pause,'Pause');$('#timer').classList.remove('paused');
     tick();
   }else{ // pause
     state.tAccumMs=state.tAccumMs+(Date.now()-state.tStart);
     a.activeMs=state.tAccumMs;
     state.tPaused=true;
-    $('#pauseBtn').textContent='▶ Resume';$('#timer').classList.add('paused');
+    setToolIcon('#pauseBtn',ICONS.play,'Resume');$('#timer').classList.add('paused');
     cancelAnimationFrame(state.raf);
   }
   saveLiveState();
@@ -2106,7 +2213,7 @@ function syncFsUI(){
   const on=!!fsElement();
   document.body.classList.toggle('fsmode',on);
   const b=$('#fsBtn');
-  if(b){b.textContent=on?'⛶ Exit full screen':'⛶ Full screen';b.classList.toggle('on',on);}
+  if(b){setToolIcon('#fsBtn',ICONS.full,on?'Exit full screen':'Full screen');b.classList.toggle('on',on);}
 }
 $('#fsBtn').onclick=toggleFullscreen;
 document.addEventListener('fullscreenchange',syncFsUI);
@@ -2241,35 +2348,27 @@ function labsMentionedIn(text){
   // leads LAB_VALUES) so one mention doesn't stack three different "normal" ranges
   const seen={};return hits.filter(l=>{const k=labNorm(l.name);if(seen[k])return false;seen[k]=1;return true;});
 }
+/* the panel is entirely automatic: it appears only when this question actually
+   names labs, and hides itself otherwise — there is no button and nothing to set */
 function renderSmartLabs(){
   const side=$('#labSide'),body=$('#labSideBody');
   if(!side||!body)return;
   const q=curQ&&curQ();
   const text=q?[q.stem||'',(q.options||[]).map(o=>o.text||'').join(' ')].join(' '):'';
-  const hits=labsMentionedIn(text);
-  if(!hits.length){
-    body.innerHTML='<div class="labside-empty">No lab values detected in this question.<br><br>'+
-      'If this question does show labs and they are missing here, open <b>Lab values</b> for the full searchable sheet.</div>';
-  }else{
-    let html='',lastSec=null;
-    hits.forEach(l=>{
-      if(l.sec!==lastSec){html+='<div class="labside-sec">'+esc(l.sec)+'</div>';lastSec=l.sec;}
-      html+='<div class="labside-row"><span class="n">'+esc(l.name.trim())+'</span><span class="v">'+esc(l.range)+'</span></div>';
-    });
-    body.innerHTML=html;
-  }
+  const hits=text?labsMentionedIn(text):[];
+  side.classList.toggle('hidden',!hits.length);
+  const main=document.querySelector('.exmain');
+  if(main)main.classList.toggle('labson',!!hits.length);
+  if(!hits.length){body.innerHTML='';return;}
+  let html='',lastSec=null;
+  hits.forEach(l=>{
+    if(l.sec!==lastSec){html+='<div class="labside-sec">'+esc(l.sec)+'</div>';lastSec=l.sec;}
+    html+='<div class="labside-row"><span class="n">'+esc(l.name.trim())+'</span><span class="v">'+esc(l.range)+'</span></div>';
+  });
+  body.innerHTML=html;
   body.scrollTop=0;
 }
-function setSmartLabs(on){
-  settings.smartLabs=!!on;saveJSON(LS.settings,settings);
-  const side=$('#labSide');
-  if(side){side.classList.toggle('hidden',!on);side.classList.toggle('forced',!!on);}
-  const b=$('#autoLabBtn');if(b)b.classList.toggle('on',!!on);
-  if(on)renderSmartLabs();
-}
-$('#autoLabBtn').onclick=()=>setSmartLabs(!settings.smartLabs);
-$('#labSideClose').onclick=()=>setSmartLabs(false);
-setSmartLabs(settings.smartLabs!==false); // apply the saved preference on load
+paintToolIcons();
 syncFsUI();
 $('#calcBtn').onclick=()=>openCalc();
 const LAB_VALUES=[
@@ -2460,17 +2559,17 @@ function armFocusLock(countdown){
   }
   const btn=$('#focusBtn');
   const finish=()=>{focusArmed=true;_fCount=null;
-    if(btn){btn.classList.add('on');btn.textContent='🔒 Locked';}
+    if(btn){btn.classList.add('on');setToolIcon('#focusBtn',ICONS.lock,'Focus Lock ON — click to unlock');}
     toast('Focus Lock ON — leaving this tab sounds the alarm. Say “I am done with my test” to unlock.');
     saveLiveState();
   };
   if(countdown){ // 5-second countdown, same as the Mac app
     let n=5;clearInterval(_fCount);
-    if(btn)btn.textContent='🔒 '+n;
+    if(btn)setToolIcon('#focusBtn',String(n),'Focus Lock arms in '+n+'s');
     toast('Focus Lock arms in 5 seconds…');
     _fCount=setInterval(()=>{n--;
       if(n<=0){clearInterval(_fCount);finish();}
-      else if(btn)btn.textContent='🔒 '+n;
+      else if(btn)setToolIcon('#focusBtn',String(n),'Focus Lock arms in '+n+'s');
     },1000);
   }else finish();
 }
@@ -2478,7 +2577,7 @@ function disarmFocusLock(silent){
   clearInterval(_fCount);_fCount=null;
   const was=focusArmed;
   focusArmed=false;fStopAlarm(true);
-  const btn=$('#focusBtn');if(btn){btn.classList.remove('on');btn.textContent='🔓 Focus';}
+  const btn=$('#focusBtn');if(btn){btn.classList.remove('on');setToolIcon('#focusBtn',ICONS.unlock,'Focus Lock');}
   if(was&&!silent)toast('Focus Lock is off');
   if(was)saveLiveState();
 }
@@ -2608,7 +2707,7 @@ function openUnlockModal(cb){
 }
 $('#focusBtn').onclick=()=>{
   if(focusArmed){openUnlockModal(null);return;}
-  if(_fCount){clearInterval(_fCount);_fCount=null;const b=$('#focusBtn');if(b)b.textContent='🔓 Focus';toast('Focus Lock cancelled');return;}
+  if(_fCount){clearInterval(_fCount);_fCount=null;const b=$('#focusBtn');if(b)setToolIcon('#focusBtn',ICONS.unlock,'Focus Lock');toast('Focus Lock cancelled');return;}
   armFocusLock(true);
 };
 
@@ -2639,7 +2738,7 @@ function armMasterLock(){
   toast('Master lock arms in 5 seconds…');
   _mCount=setInterval(()=>{n--;
     if(n<=0){clearInterval(_mCount);finish();}
-    else if(btn)btn.textContent='🔒 '+n;
+    else if(btn)setToolIcon('#focusBtn',String(n),'Focus Lock arms in '+n+'s');
   },1000);
 }
 function disarmMasterLock(silent){
