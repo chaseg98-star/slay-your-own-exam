@@ -116,6 +116,16 @@ class Store:
         self._set_meta("trading_enabled", "1" if enabled else "0")
         self._set_meta("disabled_reason", "" if enabled else reason)
 
+    def record_breaker_trip(self, now: float) -> None:
+        self._set_meta("breaker_tripped_at", repr(now))
+
+    def breaker_tripped_today(self, now: float) -> bool:
+        """True if the daily-loss circuit breaker tripped in the current UTC day."""
+        raw = self._get_meta("breaker_tripped_at")
+        if not raw:
+            return False
+        return float(raw) >= _utc_midnight_ts(now)
+
     # -- predictions ------------------------------------------------------
 
     def record_prediction(self, pred: Prediction, decision: Decision) -> None:
@@ -366,6 +376,14 @@ class Store:
         if qty <= 0 or opened_at is None:
             opened_at = now if now is not None else time.time()
         self._put_position(product_id, qty + extra_base, cost + extra_base * price, opened_at)
+
+    def close_dust(self, product_id: str, price: float, dust_usd: float) -> None:
+        """Zero out a position whose remaining value is dust, so the max-hold
+        clock resets. Sub-increment residue after a quantized 'full' exit can be
+        larger than apply_sell's sliver threshold; this catches it by notional."""
+        qty, _ = self.get_position(product_id)
+        if 0 < qty and qty * price < dust_usd:
+            self._put_position(product_id, 0.0, 0.0, None)
 
     def reconcile_down(self, product_id: str, actual_qty: float) -> None:
         """Shrink tracked position to what the exchange actually holds (funds were

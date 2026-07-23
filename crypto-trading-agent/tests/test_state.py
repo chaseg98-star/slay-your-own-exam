@@ -109,3 +109,26 @@ def test_opened_at_set_and_kept(store):
     assert store.position_opened_at("BTC-USD") == NOW
     store.apply_buy("BTC-USD", 0.01, 500.0, now=NOW + 1000)
     assert store.position_opened_at("BTC-USD") == NOW  # adding keeps the clock
+
+
+def test_close_dust_zeroes_residue(store):
+    store.apply_buy("BTC-USD", 0.005, 250.0, now=NOW)
+    # quantized exit leaves one increment (1e-8) of residue — larger than
+    # apply_sell's sliver threshold for this position size
+    store.apply_sell("BTC-USD", 0.005 - 1e-8, proceeds=249.0)
+    qty, _ = store.get_position("BTC-USD")
+    assert qty > 0  # residue survived apply_sell
+    store.close_dust("BTC-USD", price=50_000.0, dust_usd=0.50)
+    assert store.get_position("BTC-USD") == (0.0, 0.0)
+    assert store.position_opened_at("BTC-USD") is None
+    # a real position is never dust-closed
+    store.apply_buy("BTC-USD", 0.005, 250.0, now=NOW)
+    store.close_dust("BTC-USD", price=50_000.0, dust_usd=0.50)
+    assert store.get_position("BTC-USD")[0] == 0.005
+
+
+def test_breaker_latch_day_boundary(store):
+    assert store.breaker_tripped_today(NOW) is False
+    store.record_breaker_trip(NOW)
+    assert store.breaker_tripped_today(NOW) is True
+    assert store.breaker_tripped_today(NOW + 24 * 3600) is False

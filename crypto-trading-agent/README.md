@@ -48,11 +48,14 @@ Claude analyst (research: news, X/Twitter, Reddit, on-chain, markets)
 Post-trade oversight (no human needed): `run_maintenance` enforces stop-losses
 and the 28-day maximum hold every time it's called, `challenge_trade` lets the
 analyst unwind a BUY it concludes was wrong, and the daily-loss circuit breaker
-halts trading on a bad day until it is re-enabled with a written review (the
-analyst can do this unless you set `LOCK_RISK_CONTROLS=1`, which reserves mode
-changes and re-enabling for you). Note: the kill switch is absolute — while
-trading is disabled, even protective stop-loss sells are skipped, so flatten
-positions before a long shutdown if you don't want market exposure.
+halts trading on a bad day. The breaker is **latched**: for the rest of that
+UTC day nothing can re-enable trading or switch to a riskier mode (tightening
+is allowed) — the limit is per-day, and a same-day reset would defeat it. From
+the next UTC day, the analyst can re-enable with a written review, unless you
+set `LOCK_RISK_CONTROLS=1`, which reserves mode changes and re-enabling for
+you. Note: the kill switch is absolute — while trading is disabled, even
+protective stop-loss sells are skipped, so flatten positions before a long
+shutdown if you don't want market exposure.
 
 ## Risk modes
 

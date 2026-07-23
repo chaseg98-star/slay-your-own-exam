@@ -251,12 +251,23 @@ def test_maintenance_sweep_survives_one_failing_exit(store, clock):
     assert actions["ETH-USD"] == "stop_loss_exit"  # sweep continued past the failure
 
 
-def test_breaker_reenable_requires_written_reason(store, clock):
+def test_breaker_latch_blocks_same_day_reenable_and_loosening(store, clock):
     core, exchange, prices = make_core(store, clock)
     core.submit_prediction("BTC-USD", "rise", 0.95, 24, THESIS, 5.0)
     prices["BTC-USD"] = 50_000.0 * 0.01
     core.run_maintenance()
     assert core.get_status()["trading_enabled"] is False
+
+    # Same UTC day: no re-enable, even with a long written reason, and no
+    # loosening of the risk mode. Tightening stays allowed.
+    with pytest.raises(GuardrailViolation, match="latch"):
+        core.set_trading_enabled(True, "Reviewed the journal: flash crash stop-out, process was sound.")
+    with pytest.raises(GuardrailViolation, match="riskier"):
+        core.set_risk_mode("aggressive")
+    core.set_risk_mode("conservative")
+
+    # Next UTC day: a short reason is still refused, a written review passes.
+    clock.advance(24 * 3600)
     with pytest.raises(ValueError, match="reason"):
         core.set_trading_enabled(True, "ok")
     core.set_trading_enabled(True, "Reviewed the journal: BTC flash-crash stop-out, thesis process was sound.")

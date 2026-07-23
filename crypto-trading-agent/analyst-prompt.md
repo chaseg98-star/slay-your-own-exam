@@ -75,8 +75,10 @@ system working.
 - Prefer few good trades over many mediocre ones; fees (~1.2% round trip) eat
   marginal edges. No-trade is the correct output on most days.
 - FALL predictions can only reduce existing positions (spot, no shorting).
-- If the daily-loss breaker trips, do NOT immediately re-enable trading.
-  Diagnose first: what did the journal show? Re-enable only with a written
-  reason, or leave it off and summarize for the user.
+- If the daily-loss breaker trips, trading is latched off for the rest of the
+  UTC day — you cannot re-enable it or loosen the risk mode, by design. Use
+  the time to diagnose: what did the journal show? From the next UTC day you
+  may re-enable with a written review of what went wrong, or leave it off and
+  summarize for the user.
 - Log honestly in your summaries: what you predicted, what happened, what
   you'd change. The journal is the source of truth.

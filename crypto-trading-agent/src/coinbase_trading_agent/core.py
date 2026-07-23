@@ -188,6 +188,8 @@ class AgentCore:
 
     # -- controls ---------------------------------------------------------
 
+    _MODE_RISK_ORDER = [RiskMode.CONSERVATIVE, RiskMode.MODERATE, RiskMode.AGGRESSIVE]
+
     def set_risk_mode(self, mode: str) -> dict:
         if self.config.lock_risk_controls:
             raise guardrails.GuardrailViolation(
@@ -198,18 +200,37 @@ class AgentCore:
             risk_mode = RiskMode((mode or "").strip().lower())
         except ValueError:
             raise ValueError(f"mode must be one of {[m.value for m in RiskMode]}, got {mode!r}") from None
+        # While the breaker latch is active, limits may be tightened but never
+        # loosened — otherwise a mode switch would defeat the daily-loss halt.
+        current = self.store.get_risk_mode(self.config.default_risk_mode)
+        if (
+            self.store.breaker_tripped_today(self._now())
+            and self._MODE_RISK_ORDER.index(risk_mode) > self._MODE_RISK_ORDER.index(current)
+        ):
+            raise guardrails.GuardrailViolation(
+                "the daily-loss circuit breaker tripped today; switching to a riskier mode "
+                "is blocked until the next UTC day (tightening is allowed)"
+            )
         self.store.set_risk_mode(risk_mode)
         return {"risk_mode": risk_mode.value, "risk_params": RISK_PROFILES[risk_mode].__dict__}
 
     def set_trading_enabled(self, enabled: bool, reason: str = "") -> dict:
         reason = (reason or "").strip()
         if enabled:
-            # Disabling is always allowed; re-enabling can be locked down, and
-            # un-tripping the circuit breaker demands a written diagnosis.
+            # Disabling is always allowed; re-enabling is gated three ways:
+            # optional operator lock, the breaker latch (the loss limit is
+            # per-day — same-day re-enable would defeat it), and a written
+            # diagnosis once the latch has expired.
             if self.config.lock_risk_controls:
                 raise guardrails.GuardrailViolation(
                     "risk controls are locked (LOCK_RISK_CONTROLS=1); only the operator can "
                     "re-enable trading"
+                )
+            if self.store.breaker_tripped_today(self._now()):
+                raise guardrails.GuardrailViolation(
+                    "breaker latch: the daily-loss circuit breaker tripped today and trading "
+                    "stays halted until the next UTC day. Review the journal now; re-enable "
+                    "with your written findings after UTC midnight."
                 )
             current_reason = self.store.disabled_reason() or ""
             if "circuit breaker" in current_reason and len(reason) < 20:
@@ -327,6 +348,7 @@ class AgentCore:
                 )
 
         if decision.trip_breaker:
+            self.store.record_breaker_trip(now)
             self.store.set_trading_enabled(False, decision.reasons[-1])
 
         self.store.record_prediction(pred, decision)
@@ -602,11 +624,12 @@ class AgentCore:
             return
         pnl = self.store.realized_pnl_today(now)
         if pnl <= -params.daily_loss_limit_pct * snapshot_value and self.store.trading_enabled():
+            self.store.record_breaker_trip(now)
             self.store.set_trading_enabled(
                 False,
                 f"daily-loss circuit breaker: realized {pnl:+.2f} today exceeds "
-                f"{params.daily_loss_limit_pct:.0%} of portfolio; re-enable manually with "
-                "set_trading_enabled(true) after review",
+                f"{params.daily_loss_limit_pct:.0%} of portfolio; latched until the next "
+                "UTC day, then re-enable with set_trading_enabled(true) and a written review",
             )
 
     def _execute(
@@ -648,6 +671,9 @@ class AgentCore:
                 raise ExchangeError(f"no {base_currency} available to sell")
             fill = self.exchange.market_sell(product_id, base)
             realized = self.store.apply_sell(product_id, fill.base_size, fill.quote_size)
+            # Quantized exits can leave sub-increment residue; close it out so
+            # the max-hold clock resets for the next position.
+            self.store.close_dust(product_id, fill.price, DUST_USD)
 
         if fill.estimated:
             note = (note + " | " if note else "") + (
