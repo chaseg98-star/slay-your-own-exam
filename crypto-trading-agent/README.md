@@ -61,10 +61,14 @@ day until someone reviews and re-enables.
 | Daily trade cap | 4 | 8 | 16 |
 | Daily realized-loss breaker | 2% | 5% | 10% |
 | Per-coin cooldown | 6 h | 2 h | 30 min |
-| Stop-loss | 5% | 8% | 12% |
+| Stop-loss | 10% | 15% | 20% |
 
-On top of every mode: a hard `MAX_TRADE_USD` per-buy cap (default $250), a
-product whitelist (default: 10 large-cap coins), and a $5 minimum trade.
+Stops are deliberately wide — tight stops measurably destroy value in crypto
+(see RESEARCH.md). On top of every mode: a hard `MAX_TRADE_USD` per-buy cap
+(default $250), a product whitelist (default: 10 large-cap coins), a $5
+minimum trade, a **fee gate** (RISE predictions expecting a move under 1.5%
+are never traded — fees would eat the edge), and a **28-day maximum hold**
+(crypto momentum reverses beyond ~1 month; `run_maintenance` time-exits).
 
 ## Setup
 
@@ -137,13 +141,17 @@ maintenance cadence.
 
 ## What the research says (see RESEARCH.md)
 
-The strategy layer follows the evidence: trend/momentum is the best-documented
-signal class in crypto; sentiment has real but fast-decaying value and needs
-price/volume confirmation; most retail bots fail to beat buy-and-hold after
-fees; and risk management (sizing, stops, drawdown breakers) matters more than
-entry signals. Hence: technical cross-check that only ever de-risks, volatility-
-aware sizing, stop-losses, cooldowns against overtrading, and a daily-loss
-breaker.
+The strategy layer was built from a literature-and-field survey (RESEARCH.md,
+with sources): trend/momentum at 1–4 week horizons is the best-documented
+signal class in crypto; RSI works in the *momentum* direction there, not the
+classic contrarian reading; volume confirms only in normal regimes; sentiment
+predicts volatility more than returns, decays in hours, and needs price/volume
+confirmation; fees are the binding constraint at retail; the only live
+real-money LLM trading test lost heavily with fees dominating P&L; and most
+retail bots fail to beat buy-and-hold. Hence every one of this agent's layers:
+fee gate, technical cross-check that only ever de-risks, volatility-aware
+sizing, wide stops, a 28-day max hold, cooldowns against overtrading, a
+daily-loss breaker, and the analyst double-check.
 
 ## Honest disclaimers
 

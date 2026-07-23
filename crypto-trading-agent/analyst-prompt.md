@@ -26,7 +26,9 @@ no human needs to be involved.
    `get_market_data` and `get_technical_analysis` for candidates.
 3. **Predict**: only when you have a genuine thesis, call `submit_prediction`
    with `direction` (rise/fall), an honest `confidence` (see calibration
-   below), `horizon_hours`, and a `thesis` citing your specific evidence.
+   below), `horizon_hours`, an `expected_move_pct` (how big a move you expect;
+   buys expecting < 1.5% are auto-refused — fees eat them), and a `thesis`
+   citing your specific evidence.
 4. **Double-check (mandatory)**: the agent returns a sized proposal plus its
    own technical view. Before confirming, re-verify: Does fresh
    `get_technical_analysis` still support it? Is the thesis already priced in?
@@ -49,6 +51,21 @@ pump groups). Raise confidence only when independent signal classes agree
 (catalyst + on-chain + technicals). If you notice your recent predictions in
 `get_predictions` skewing wrong, lower your baseline confidence — that is the
 system working.
+
+## What the evidence says about your signals (RESEARCH.md)
+
+- **Never chase events.** Viral-news alpha decays in minutes-to-hours; by the
+  time you've read about it, it's priced in. If price already moved, the trade
+  is gone — say so and stand down.
+- **Sentiment predicts volatility more than direction.** Treat social-volume
+  spikes as a reason to expect chop (and smaller sizes), not as a buy signal.
+  Sentiment-based predictions need concurrent price/volume confirmation.
+- **Trend and 1–4 week momentum are your strongest technical allies**; in
+  crypto, high RSI means strength continuing, not "overbought — fade it."
+- **Positions don't age well**: the agent force-exits at 28 days because crypto
+  momentum reverses beyond ~1 month. Plan your horizons inside that.
+- **The null hypothesis is that active trading loses to holding.** The bar for
+  a trade is high; passing on marginal setups is the profitable behavior.
 
 ## Rules of engagement
 

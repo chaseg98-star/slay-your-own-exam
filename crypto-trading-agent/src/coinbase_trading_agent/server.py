@@ -93,13 +93,19 @@ def submit_prediction(
     confidence: float,
     horizon_hours: float,
     thesis: str,
+    expected_move_pct: float,
 ) -> dict:
     """Submit a researched prediction that a coin will 'rise' or 'fall' within
-    horizon_hours, with confidence in (0, 1] and a thesis explaining the evidence.
-    The agent cross-checks it against its own technicals, applies the active risk
-    mode's rules, and returns either a refusal (with reasons) or a sized trade
-    proposal for you to confirm_decision / reject_decision."""
-    return _get_core().submit_prediction(product_id, direction, confidence, horizon_hours, thesis)
+    horizon_hours, with confidence in (0, 1], a thesis explaining the evidence,
+    and expected_move_pct — the size of the move you expect (e.g. 3.0 = 3%).
+    RISE predictions below the fee gate (default 1.5%) are recorded but never
+    traded: fees would consume the edge. The agent cross-checks the prediction
+    against its own technicals, applies the active risk mode's rules, and
+    returns either a refusal (with reasons) or a sized trade proposal for you
+    to confirm_decision / reject_decision."""
+    return _get_core().submit_prediction(
+        product_id, direction, confidence, horizon_hours, thesis, expected_move_pct
+    )
 
 
 @mcp.tool()

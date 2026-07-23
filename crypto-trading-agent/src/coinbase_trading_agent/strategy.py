@@ -1,11 +1,22 @@
 """Technical strategy engine.
 
 Computes the agent's own view from raw OHLCV candles so every analyst
-prediction is cross-checked against price data. The design follows the
-best-evidenced retail-viable ideas: trend/momentum as the core signal,
-RSI extremes as an overextension filter, volume as confirmation, and a
-volatility regime filter for sizing. Crucially, technical disagreement can
-only shrink or block a trade — it never sizes one up.
+prediction is cross-checked against price data. Signal design follows the
+evidence surveyed in RESEARCH.md:
+
+* trend (price vs EMA50, EMA20 vs EMA50) is the primary gate — the
+  best-documented signal family in crypto (weight 0.40);
+* 1-4 week momentum is the robust horizon; longer lookbacks flip to
+  reversal (weight 0.30);
+* RSI(14) is scored in the MOMENTUM direction — in crypto, high RSI
+  predicts higher returns (JFQA 2025); classic contrarian
+  overbought/oversold usage is unsupported (weight 0.15);
+* volume confirms only in normal regimes (Balcilar et al.) — the
+  component is disabled entirely when volatility is extreme (weight 0.15);
+* realized-volatility regime scales SIZE only, never direction.
+
+Crucially, technical disagreement can only shrink or block a trade — it
+never sizes one up.
 """
 
 from __future__ import annotations
@@ -92,7 +103,13 @@ def technical_view(candles: list[Candle]) -> TechView:
     notes: list[str] = []
     score = 0.0
 
-    # Trend filter (±0.4): the best-evidenced signal class in crypto.
+    # Volatility regime first (it gates the volume component below).
+    returns = _log_returns(closes)
+    recent_sigma = statistics.pstdev(returns[-24:]) if len(returns) >= 24 else 0.0
+    full_sigma = statistics.pstdev(returns) if len(returns) >= 2 else 0.0
+    high_vol = full_sigma > 0 and recent_sigma > 1.5 * full_sigma
+
+    # Trend gate (±0.40): the best-evidenced signal family in crypto.
     trend = 0.0
     if price > ema50 and ema20 > ema50:
         trend = 0.4
@@ -104,34 +121,39 @@ def technical_view(candles: list[Candle]) -> TechView:
         notes.append("trend mixed: EMAs disagree")
     score += trend
 
-    # Momentum (±0.3): lookback return over the last ~1/3 of the window.
-    lookback = max(24, len(closes) // 3)
-    momentum_return = price / closes[-lookback] - 1.0 if closes[-lookback] > 0 else 0.0
+    # Momentum (±0.30): blended short/medium lookback ROC. The robust
+    # continuation horizon in crypto is 1-4 weeks; never longer.
+    lookbacks = [lb for lb in (72, 168) if lb < len(closes)] or [max(24, len(closes) // 3)]
+    rocs = [price / closes[-lb] - 1.0 for lb in lookbacks if closes[-lb] > 0]
+    momentum_return = sum(rocs) / len(rocs) if rocs else 0.0
     momentum = max(-0.3, min(0.3, momentum_return * 3.0))
     score += momentum
-    notes.append(f"momentum: {momentum_return:+.1%} over last {lookback} candles")
+    notes.append(
+        f"momentum: {momentum_return:+.1%} blended over {lookbacks} candle lookbacks"
+    )
 
-    # RSI extremes (±0.2): mean-reversion / overextension filter.
-    if rsi14 >= 75:
-        score -= 0.2
-        notes.append(f"RSI {rsi14:.0f} overextended (>=75): fading strength")
-    elif rsi14 <= 25:
-        score += 0.2
-        notes.append(f"RSI {rsi14:.0f} washed out (<=25): downside likely overdone")
+    # RSI(14) (±0.15), scored in the MOMENTUM direction: in crypto, high RSI
+    # predicts continued strength (JFQA 2025); contrarian use is unsupported.
+    rsi_component = max(-1.0, min(1.0, (rsi14 - 50.0) / 25.0)) * 0.15
+    score += rsi_component
+    notes.append(f"RSI {rsi14:.0f} scored as momentum: {rsi_component:+.2f}")
+    if rsi14 >= 85:
+        notes.append("RSI >= 85 blow-off warning: consider tightening exits, not adding")
 
-    # Volume confirmation (±0.1): recent volume vs the prior baseline.
+    # Volume confirmation (±0.15) — only in normal-volatility regimes;
+    # volume has no documented predictive power in extreme regimes.
     recent_vol = sum(volumes[-10:]) / 10.0
     baseline = sum(volumes[:-10]) / max(1, len(volumes) - 10)
     vol_ratio = recent_vol / baseline if baseline > 0 else 1.0
-    if vol_ratio >= 1.5 and abs(trend) > 0:
-        score += 0.1 if trend > 0 else -0.1
-        notes.append(f"volume {vol_ratio:.1f}x baseline confirms the trend")
-
-    # Volatility regime: recent realized vol vs the full window.
-    returns = _log_returns(closes)
-    recent_sigma = statistics.pstdev(returns[-24:]) if len(returns) >= 24 else 0.0
-    full_sigma = statistics.pstdev(returns) if len(returns) >= 2 else 0.0
-    high_vol = full_sigma > 0 and recent_sigma > 1.5 * full_sigma
+    if high_vol:
+        notes.append("volume component disabled: extreme-volatility regime")
+    elif abs(trend) > 0:
+        if vol_ratio >= 1.25:
+            score += 0.15 if trend > 0 else -0.15
+            notes.append(f"volume {vol_ratio:.1f}x baseline confirms the trend")
+        elif vol_ratio <= 0.75:
+            score += -0.075 if trend > 0 else 0.075
+            notes.append(f"volume contracting ({vol_ratio:.1f}x): trend unconfirmed")
 
     if high_vol:
         regime = "high_volatility"
@@ -179,7 +201,9 @@ def adjust_for_technicals(
 
     alignment = view.score if direction is Direction.RISE else -view.score
 
-    if alignment >= 0.2:
+    # Agreement threshold 0.35 per RESEARCH.md: below it a prediction is at
+    # best unconfirmed, and unconfirmed trades get cut, never full-sized.
+    if alignment >= 0.35:
         notes.append(f"technicals agree (alignment {alignment:+.2f}); no adjustment")
     elif alignment > -0.2:
         multiplier = 0.75

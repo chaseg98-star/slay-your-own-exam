@@ -46,6 +46,9 @@ class Config:
     require_confirmation: bool
     proposal_ttl_minutes: float
     challenge_window_hours: float
+    # Fee gate: minimum expected move (%) for a trade to be worth its fees.
+    # A taker round trip costs ~1.2-1.5% all-in, so the default demands 1.5%.
+    fee_gate_pct: float
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Config":
@@ -114,4 +117,5 @@ class Config:
             require_confirmation=require_confirmation,
             proposal_ttl_minutes=_positive_float("PROPOSAL_TTL_MINUTES", "15"),
             challenge_window_hours=_positive_float("CHALLENGE_WINDOW_HOURS", "24"),
+            fee_gate_pct=_positive_float("FEE_GATE_PCT", "1.5"),
         )

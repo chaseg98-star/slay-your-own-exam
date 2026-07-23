@@ -35,7 +35,9 @@ class RiskParams:
     daily_loss_limit_pct: float
     # Minimum minutes between prediction-driven orders on the same product.
     cooldown_minutes: int
-    # Unrealized drawdown from avg cost at which run_maintenance() exits a position.
+    # Unrealized drawdown from avg cost at which run_maintenance() exits a
+    # position. Deliberately wide: tight stops measurably destroy value in
+    # crypto; the evidence supports 10%+ volatility-scaled stops (RESEARCH.md).
     stop_loss_pct: float
 
 
@@ -48,7 +50,7 @@ RISK_PROFILES: dict[RiskMode, RiskParams] = {
         daily_trade_cap=4,
         daily_loss_limit_pct=0.02,
         cooldown_minutes=360,
-        stop_loss_pct=0.05,
+        stop_loss_pct=0.10,
     ),
     RiskMode.MODERATE: RiskParams(
         min_confidence=0.65,
@@ -58,7 +60,7 @@ RISK_PROFILES: dict[RiskMode, RiskParams] = {
         daily_trade_cap=8,
         daily_loss_limit_pct=0.05,
         cooldown_minutes=120,
-        stop_loss_pct=0.08,
+        stop_loss_pct=0.15,
     ),
     RiskMode.AGGRESSIVE: RiskParams(
         min_confidence=0.55,
@@ -68,9 +70,13 @@ RISK_PROFILES: dict[RiskMode, RiskParams] = {
         daily_trade_cap=16,
         daily_loss_limit_pct=0.10,
         cooldown_minutes=30,
-        stop_loss_pct=0.12,
+        stop_loss_pct=0.20,
     ),
 }
+
+# Crypto momentum continuation flips to reversal beyond ~1 month (RESEARCH.md);
+# run_maintenance() force-exits any position held longer than this, all modes.
+MAX_HOLD_DAYS = 28
 
 
 @dataclass

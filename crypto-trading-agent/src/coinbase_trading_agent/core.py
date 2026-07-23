@@ -24,6 +24,7 @@ from . import __version__, guardrails, risk, strategy
 from .config import Config
 from .exchange import Exchange, ExchangeError
 from .models import (
+    MAX_HOLD_DAYS,
     RISK_PROFILES,
     Decision,
     Direction,
@@ -82,7 +83,7 @@ class AgentCore:
             tracked_qty, _ = self.store.get_position(product_id)
             if qty > tracked_qty * (1 + 1e-9) + 1e-12:
                 # Coins bought outside the agent: adopt at today's price.
-                self.store.adopt_position(product_id, qty - tracked_qty, price)
+                self.store.adopt_position(product_id, qty - tracked_qty, price, now=self._now())
             elif qty < tracked_qty * (1 - 1e-9):
                 self.store.reconcile_down(product_id, qty)
         return PortfolioSnapshot(
@@ -208,6 +209,7 @@ class AgentCore:
         confidence: float,
         horizon_hours: float,
         thesis: str,
+        expected_move_pct: float,
     ) -> dict:
         product_id = self._validate_product(product_id)
         try:
@@ -223,6 +225,9 @@ class AgentCore:
         thesis = (thesis or "").strip()
         if len(thesis) < 20:
             raise ValueError("thesis must explain the reasoning (>= 20 characters)")
+        expected_move_pct = abs(float(expected_move_pct))
+        if expected_move_pct > 100.0:
+            raise ValueError("expected_move_pct is a percentage, e.g. 3.0 for a 3% move")
 
         now = self._now()
         self.store.expire_stale_proposals(now)
@@ -234,6 +239,25 @@ class AgentCore:
             thesis=thesis,
             created_at=now,
         )
+
+        # Fee gate (RESEARCH.md rule #1): a taker round trip costs ~1.2-1.5%,
+        # so a predicted move below the gate is negative-EV before it starts.
+        # Applies to buys; risk-reducing FALL exits are exempt.
+        if parsed_direction is Direction.RISE and expected_move_pct < self.config.fee_gate_pct:
+            decision = Decision(
+                "no_action",
+                [
+                    f"fee gate: expected move {expected_move_pct:.2f}% is below "
+                    f"{self.config.fee_gate_pct:.2f}%; fees (~1.2-1.5% round trip) would consume "
+                    "the edge. Prediction recorded only."
+                ],
+            )
+            self.store.record_prediction(pred, decision)
+            return {
+                "prediction_id": pred.id,
+                "decision": decision.as_dict(),
+                "executed": False,
+            }
 
         snapshot = self._snapshot()
         view = self._tech_view(product_id)
@@ -443,22 +467,34 @@ class AgentCore:
                 continue
             avg_cost = cost / tracked_qty
             drawdown = price / avg_cost - 1.0
+            opened_at = self.store.position_opened_at(product_id)
+            held_days = (now - opened_at) / 86400.0 if opened_at else 0.0
+
+            exit_reason = None
             if drawdown <= -params.stop_loss_pct:
-                decision = Decision(
-                    "sell",
-                    [
-                        f"stop-loss: {product_id} at {drawdown:+.1%} vs avg cost "
-                        f"{avg_cost:.2f}; mode limit is -{params.stop_loss_pct:.0%}"
-                    ],
-                    base_size=qty,
+                exit_reason = (
+                    "stop_loss_exit",
+                    f"stop-loss: {product_id} at {drawdown:+.1%} vs avg cost "
+                    f"{avg_cost:.2f}; mode limit is -{params.stop_loss_pct:.0%}",
                 )
+            elif held_days > MAX_HOLD_DAYS:
+                # Crypto momentum flips to reversal beyond ~1 month; time-exit
+                # regardless of P&L (RESEARCH.md).
+                exit_reason = (
+                    "max_hold_time_exit",
+                    f"time exit: {product_id} held {held_days:.0f} days, "
+                    f"max is {MAX_HOLD_DAYS}; momentum beyond ~1 month reverses",
+                )
+            if exit_reason:
+                action_name, why = exit_reason
+                decision = Decision("sell", [why], base_size=qty)
                 fill, realized = self._execute(
-                    product_id, decision, prediction_id=None, counts_toward_cap=False,
-                    note=f"stop-loss at {drawdown:+.1%}",
+                    product_id, decision, prediction_id=None, counts_toward_cap=False, note=why,
                 )
                 actions.append(
-                    {"action": "stop_loss_exit", "product_id": product_id,
-                     "drawdown": round(drawdown, 4), "fill": fill.__dict__, "realized_pnl": realized}
+                    {"action": action_name, "product_id": product_id,
+                     "drawdown": round(drawdown, 4), "held_days": round(held_days, 1),
+                     "fill": fill.__dict__, "realized_pnl": realized}
                 )
         # Post-sweep breaker check: stop-losses may have pushed us past the daily limit.
         self._maybe_trip_breaker(now)
@@ -510,7 +546,7 @@ class AgentCore:
 
         if side == "BUY":
             fill = self.exchange.market_buy(product_id, decision.quote_size)
-            self.store.apply_buy(product_id, fill.base_size, fill.quote_size)
+            self.store.apply_buy(product_id, fill.base_size, fill.quote_size, now=now)
             realized = None
         else:
             balances = self.exchange.get_balances()

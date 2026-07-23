@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS trades (
 CREATE TABLE IF NOT EXISTS positions (
     product_id TEXT PRIMARY KEY,
     base_qty REAL NOT NULL,
-    cost REAL NOT NULL
+    cost REAL NOT NULL,
+    opened_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_trades_created ON trades(created_at);
 CREATE INDEX IF NOT EXISTS idx_trades_product ON trades(product_id, created_at);
@@ -290,17 +291,40 @@ class Store:
         ).fetchone()
         return (float(row["base_qty"]), float(row["cost"])) if row else (0.0, 0.0)
 
-    def _put_position(self, product_id: str, base_qty: float, cost: float) -> None:
+    def position_opened_at(self, product_id: str) -> float | None:
+        row = self._conn.execute(
+            "SELECT opened_at FROM positions WHERE product_id = ? AND base_qty > 0", (product_id,)
+        ).fetchone()
+        return float(row["opened_at"]) if row and row["opened_at"] is not None else None
+
+    def _put_position(
+        self, product_id: str, base_qty: float, cost: float, opened_at: float | None
+    ) -> None:
+        base_qty = max(0.0, base_qty)
+        if base_qty == 0.0:
+            opened_at = None  # position closed; next open restarts the clock
         self._conn.execute(
-            "INSERT INTO positions(product_id, base_qty, cost) VALUES(?,?,?) "
-            "ON CONFLICT(product_id) DO UPDATE SET base_qty = excluded.base_qty, cost = excluded.cost",
-            (product_id, max(0.0, base_qty), max(0.0, cost)),
+            "INSERT INTO positions(product_id, base_qty, cost, opened_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(product_id) DO UPDATE SET base_qty = excluded.base_qty, "
+            "cost = excluded.cost, opened_at = excluded.opened_at",
+            (product_id, base_qty, max(0.0, cost), opened_at),
         )
         self._conn.commit()
 
-    def apply_buy(self, product_id: str, base_size: float, quote_spent: float) -> None:
+    def _current_opened_at(self, product_id: str) -> float | None:
+        row = self._conn.execute(
+            "SELECT opened_at FROM positions WHERE product_id = ?", (product_id,)
+        ).fetchone()
+        return float(row["opened_at"]) if row and row["opened_at"] is not None else None
+
+    def apply_buy(
+        self, product_id: str, base_size: float, quote_spent: float, now: float | None = None
+    ) -> None:
         qty, cost = self.get_position(product_id)
-        self._put_position(product_id, qty + base_size, cost + quote_spent)
+        opened_at = self._current_opened_at(product_id)
+        if qty <= 0 or opened_at is None:
+            opened_at = now if now is not None else time.time()
+        self._put_position(product_id, qty + base_size, cost + quote_spent, opened_at)
 
     def apply_sell(self, product_id: str, base_size: float, proceeds: float) -> float | None:
         """Reduce the tracked position; returns realized P&L for the tracked part
@@ -311,13 +335,20 @@ class Store:
         tracked = min(qty, base_size)
         avg_cost = cost / qty
         realized = (proceeds / base_size) * tracked - avg_cost * tracked
-        self._put_position(product_id, qty - tracked, cost - avg_cost * tracked)
+        self._put_position(
+            product_id, qty - tracked, cost - avg_cost * tracked, self._current_opened_at(product_id)
+        )
         return realized
 
-    def adopt_position(self, product_id: str, extra_base: float, price: float) -> None:
+    def adopt_position(
+        self, product_id: str, extra_base: float, price: float, now: float | None = None
+    ) -> None:
         """Fold pre-existing (untracked) holdings into the cost basis at today's price."""
         qty, cost = self.get_position(product_id)
-        self._put_position(product_id, qty + extra_base, cost + extra_base * price)
+        opened_at = self._current_opened_at(product_id)
+        if qty <= 0 or opened_at is None:
+            opened_at = now if now is not None else time.time()
+        self._put_position(product_id, qty + extra_base, cost + extra_base * price, opened_at)
 
     def reconcile_down(self, product_id: str, actual_qty: float) -> None:
         """Shrink tracked position to what the exchange actually holds (funds were
@@ -326,4 +357,4 @@ class Store:
         if qty <= 0 or actual_qty >= qty:
             return
         ratio = max(0.0, actual_qty) / qty
-        self._put_position(product_id, actual_qty, cost * ratio)
+        self._put_position(product_id, actual_qty, cost * ratio, self._current_opened_at(product_id))
