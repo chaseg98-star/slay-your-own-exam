@@ -179,7 +179,40 @@ def get_predictions(limit: int = 20) -> list[dict]:
     return _get_core().get_predictions(limit)
 
 
+def _generate_robinhood_keys() -> None:
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key = Ed25519PrivateKey.generate()
+    private_b64 = base64.b64encode(
+        key.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+    ).decode()
+    public_b64 = base64.b64encode(
+        key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+    ).decode()
+    print("Robinhood API keypair generated.\n")
+    print(f"PUBLIC key — paste this into Robinhood's API-trading settings:\n  {public_b64}\n")
+    print(f"PRIVATE key — put this in ROBINHOOD_PRIVATE_KEY in your MCP config:\n  {private_b64}\n")
+    print(
+        "The PRIVATE key is the secret: it never leaves this computer, and nobody\n"
+        "legitimate will ever ask you to paste it into a chat, email, or website\n"
+        "other than your own config file. The PUBLIC key is safe to share."
+    )
+
+
 def main() -> None:
+    if "--generate-robinhood-keys" in sys.argv:
+        _generate_robinhood_keys()
+        return
+
     try:
         core = _get_core()
     except Exception as exc:

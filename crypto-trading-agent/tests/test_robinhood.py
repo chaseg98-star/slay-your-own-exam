@@ -196,3 +196,22 @@ def test_no_fund_movement_surface():
     names = " ".join(dir(RobinhoodExchange)).lower()
     for forbidden in ("withdraw", "deposit", "transfer", "send_to", "wallet"):
         assert forbidden not in names
+
+
+def test_generated_keypair_is_accepted(capsys):
+    from coinbase_trading_agent.server import _generate_robinhood_keys
+
+    _generate_robinhood_keys()
+    out = capsys.readouterr().out
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    public_b64 = lines[lines.index([l for l in lines if l.startswith("PUBLIC")][0]) + 1]
+    private_b64 = lines[lines.index([l for l in lines if l.startswith("PRIVATE")][0]) + 1]
+    ex = RobinhoodExchange(api_key="k", private_key_b64=private_b64)
+    # the derived public key must match what we'd hand to Robinhood
+    derived = base64.b64encode(
+        ex._key.public_key().public_bytes_raw()
+        if hasattr(ex._key.public_key(), "public_bytes_raw")
+        else b""
+    ).decode()
+    if derived:
+        assert derived == public_b64

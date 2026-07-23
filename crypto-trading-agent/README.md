@@ -106,10 +106,15 @@ taker fee. Run the agent this way until you trust it.
 Uses the official [Robinhood Crypto Trading API](https://docs.robinhood.com)
 (crypto only — Robinhood has no public stock API).
 
-1. In the Robinhood app/web: **Account → Settings → Crypto → API trading**.
-   Generate an Ed25519 keypair (their portal walks you through it), register
-   the **public** key, and save the **private key seed (base64)** plus the API
-   key they issue.
+1. Generate a keypair on your machine (after `pip install -e .`):
+   ```bash
+   coinbase-trading-agent --generate-robinhood-keys
+   ```
+   It prints a PUBLIC key (safe to share — Robinhood gets this) and a PRIVATE
+   key (goes only into your local config; never share it or paste it into any
+   chat or website).
+2. In the Robinhood app/web: **Account → Settings → Crypto → API trading**.
+   Register the **public** key there and save the API key Robinhood issues.
 2. Set `EXCHANGE=robinhood`, `ROBINHOOD_API_KEY`, and `ROBINHOOD_PRIVATE_KEY`
    in the env (see `.env.example`).
 3. Two structural differences from Coinbase to know:
