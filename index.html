@@ -411,6 +411,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
   <button class="iconbtn" id="masterBtn" title="Master lock — voice alarm the moment you leave this tab or click off the browser, on any screen. Say “I am done with my test” to unlock.">🔒 Master</button>
   <a class="iconbtn" id="navFlash" href="flashcards.html" style="text-decoration:none;display:inline-flex;align-items:center">🗂 Flashcards</a>
   <a class="iconbtn" id="navBuddy" href="study-buddy.html" style="text-decoration:none;display:inline-flex;align-items:center">🎙 Study Buddy</a>
+  <a class="iconbtn" id="navRemote" href="remote.html" style="text-decoration:none;display:inline-flex;align-items:center">📱 Remote</a>
   <button class="iconbtn" id="navHome" title="Back to the main menu — your test is saved automatically">⌂ Home</button>
   <button class="iconbtn hidden" id="navAdmin">Admin</button>
   <button class="iconbtn" id="navHistory">History</button>
@@ -937,7 +938,67 @@ $('#authBtn').onclick=()=>{
   openAuthModal();
 };
 if(fbEnabled){
-  fbAuth.onAuthStateChanged(u=>{curUser=u;renderAuthUI();if(u){syncCloudSessions();resumeFromCloudIfAny();}});
+  fbAuth.onAuthStateChanged(u=>{curUser=u;renderAuthUI();if(u){syncCloudSessions();resumeFromCloudIfAny();startRemoteListener();}else stopRemoteListener();});
+}
+
+/* ---------- phone remote control (remote.html) ----------
+   One Firestore doc per account (remote/{uid}). The phone writes {cmd,watch},
+   this tab executes the command and writes {status} back. Status is only
+   published while a phone heartbeat is fresh, so unused accounts cost zero writes. */
+function remoteDocRef(){return fbDb.collection('remote').doc(curUser.uid);}
+let _remoteUnsub=null,_remoteSeq=null,_remoteStatusTimer=null,_remoteWatchAt=0;
+function remoteStatus(){
+  const N=state.order?state.order.length:0;let answered=0,flagged=0;
+  (state.order||[]).forEach(qi=>{const a=state.attempts[qi];if(a&&a.selected)answered++;if(a&&a.flagged)flagged++;});
+  let blockMs=null;
+  if(state.screen==='exam'&&N){
+    let used=0;
+    state.order.forEach((qi,k)=>{if(k===state.cur)return;const a=state.attempts[qi];if(a)used+=(a.activeMs||0);});
+    used+=state.tAccumMs+(state.tPaused?0:(Date.now()-state.tStart));
+    blockMs=TIMER_SECONDS*1000*N-used;
+  }
+  return {screen:state.screen,name:state.liveName||state.pdfName||'',cur:state.cur+1,total:N,
+    answered,flagged,paused:!!state.tPaused,reviewMode:!!state.reviewMode,blockMs,
+    focusLock:!!focusArmed,at:Date.now()};
+}
+function pushRemoteStatus(){
+  if(!fbEnabled||!curUser)return;
+  if(Date.now()-_remoteWatchAt>60000)return; // no phone watching right now
+  remoteDocRef().set({status:remoteStatus()},{merge:true}).catch(()=>{});
+}
+function execRemoteCmd(c){
+  if(state.screen!=='exam'||!state.order.length){pushRemoteStatus();return;}
+  switch(c.cmd){
+    case 'pause': if(!state.tPaused)$('#pauseBtn').click(); break;
+    case 'resume': if(state.tPaused)$('#pauseBtn').click(); break;
+    case 'next': if(state.cur<state.order.length-1)loadQuestion(state.cur+1); break; // never ends the test remotely
+    case 'prev': if(state.cur>0)loadQuestion(state.cur-1); break;
+    case 'goto': {const n=Math.floor(c.n);if(n>=1&&n<=state.order.length)loadQuestion(n-1);break;}
+    case 'flag': $('#flagBtn').click(); break;
+    case 'suspend':
+      if(focusArmed){toast('Remote: Focus Lock is armed — speak to unlock first');pushRemoteStatus();return;}
+      doSuspend(); break;
+    default: return;
+  }
+  toast('Remote: '+c.cmd);
+  pushRemoteStatus();
+}
+function startRemoteListener(){
+  stopRemoteListener();
+  _remoteSeq=null;
+  _remoteUnsub=remoteDocRef().onSnapshot(doc=>{
+    const d=doc.data()||{},c=d.cmd;
+    if(d.watch)_remoteWatchAt=Date.now();
+    // the first snapshot is history, not a fresh press — baseline and skip it
+    if(_remoteSeq===null){_remoteSeq=(c&&typeof c.seq==='number')?c.seq:0;pushRemoteStatus();return;}
+    if(c&&typeof c.seq==='number'&&c.seq>_remoteSeq){_remoteSeq=c.seq;execRemoteCmd(c);}
+  },e=>console.warn('Remote listener failed:',e));
+  clearInterval(_remoteStatusTimer);
+  _remoteStatusTimer=setInterval(()=>{if(state.screen==='exam')pushRemoteStatus();},5000);
+}
+function stopRemoteListener(){
+  if(_remoteUnsub){_remoteUnsub();_remoteUnsub=null;}
+  clearInterval(_remoteStatusTimer);_remoteStatusTimer=null;
 }
 renderAuthUI();
 function renderAdmin(){
@@ -1136,6 +1197,7 @@ function saveLiveState(){ // the small, fast-changing exam/progress state — wr
     focusLock:focusArmed,savedAt:Date.now()};
   try{localStorage.setItem(LS.live,JSON.stringify(snap));}catch(e){}
   cloudSaveLiveSoon();
+  pushRemoteStatus(); // keep a watching phone remote in sync on every action
 }
 let _liveQTimer=null;
 function saveLiveQSoon(){clearTimeout(_liveQTimer);_liveQTimer=setTimeout(saveLiveQ,1200);} // debounce review edits
