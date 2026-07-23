@@ -233,10 +233,12 @@ class AgentCore:
                     "with your written findings after UTC midnight."
                 )
             current_reason = self.store.disabled_reason() or ""
-            if "circuit breaker" in current_reason and len(reason) < 20:
+            if ("circuit breaker" in current_reason or "portfolio floor" in current_reason) and len(
+                reason
+            ) < 20:
                 raise ValueError(
-                    "re-enabling after a circuit-breaker trip requires a reason explaining "
-                    "what was reviewed (>= 20 characters)"
+                    "re-enabling after a circuit-breaker or portfolio-floor halt requires a "
+                    "reason explaining what was reviewed (>= 20 characters)"
                 )
         self.store.set_trading_enabled(enabled, reason or ("manually disabled" if not enabled else ""))
         return {
@@ -283,6 +285,25 @@ class AgentCore:
             thesis=thesis,
             created_at=now,
         )
+
+        # Portfolio floor: below it, no new buys, ever. (Maintenance handles
+        # the liquidation; this stops the analyst from buying the dip with
+        # what's left of the capital.)
+        if (
+            parsed_direction is Direction.RISE
+            and self.config.portfolio_floor_usd > 0
+            and self._snapshot().total_value <= self.config.portfolio_floor_usd
+        ):
+            decision = Decision(
+                "no_action",
+                [
+                    f"portfolio floor: total value is at or below "
+                    f"${self.config.portfolio_floor_usd:.2f}; no new buys. "
+                    "Run run_maintenance and review with the operator."
+                ],
+            )
+            self.store.record_prediction(pred, decision)
+            return {"prediction_id": pred.id, "decision": decision.as_dict(), "executed": False}
 
         # Fee gate (RESEARCH.md rule #1): a taker round trip costs ~1.2-1.5%,
         # so a predicted move below the gate is negative-EV before it starts.
@@ -549,8 +570,44 @@ class AgentCore:
         )
         return {"unwound": True, "fill": fill.__dict__, "realized_pnl": realized}
 
+    def _shock_alerts(self, snapshot: PortfolioSnapshot) -> list[dict]:
+        """Sharp drops in held coins demand an immediate analyst re-research."""
+        alerts = []
+        threshold = self.config.shock_drop_pct / 100.0
+        for product_id, (qty, price) in snapshot.positions.items():
+            try:
+                candles = self.exchange.get_candles(product_id, "ONE_HOUR", 25)
+            except ExchangeError:
+                candles = []
+            if len(candles) < 2:
+                continue
+            change_1h = price / candles[-1].close - 1.0 if candles[-1].close > 0 else 0.0
+            change_24h = price / candles[0].close - 1.0 if candles[0].close > 0 else 0.0
+            if change_1h <= -threshold or change_24h <= -2 * threshold:
+                alerts.append(
+                    {
+                        "type": "REVIEW_REQUIRED",
+                        "product_id": product_id,
+                        "change_1h": round(change_1h, 4),
+                        "change_24h": round(change_24h, 4),
+                        "position_value": round(qty * price, 2),
+                        "instruction": (
+                            f"{product_id} is dropping sharply "
+                            f"({change_1h:+.1%} 1h / {change_24h:+.1%} 24h). Re-research the "
+                            "thesis NOW: check news, order flow, and get_technical_analysis. "
+                            "If the thesis is invalidated, close_position immediately; if you "
+                            "have concrete evidence this is transient, write that reasoning "
+                            "into your session log. The stop-loss and portfolio floor remain "
+                            "armed either way."
+                        ),
+                    }
+                )
+        return alerts
+
     def run_maintenance(self) -> dict:
-        """Stop-loss sweep + housekeeping. The analyst should call this regularly."""
+        """Safety sweep: portfolio floor, stop-losses, max-hold exits, shock
+        alerts, proposal expiry. The analyst (or a cron via --monitor) should
+        call this at least every 30 minutes."""
         now = self._now()
         expired = self.store.expire_stale_proposals(now)
         actions: list[dict] = []
@@ -560,9 +617,40 @@ class AgentCore:
                 f"({self.store.disabled_reason() or 'kill switch'})",
                 "proposals_expired": expired,
                 "actions": actions,
+                "alerts": [],
             }
         params = self._params()
         snapshot = self._snapshot()
+
+        # Hard capital floor: liquidate everything and halt. No override — a
+        # crash that "will surely bounce back" is indistinguishable from one
+        # that won't; re-entry later requires a fresh, risk-checked prediction.
+        floor = self.config.portfolio_floor_usd
+        if floor > 0 and snapshot.total_value <= floor:
+            for product_id, (qty, price) in snapshot.positions.items():
+                try:
+                    fill, realized = self._execute(
+                        product_id,
+                        Decision("sell", [f"portfolio floor ${floor:.2f} breached"], base_size=qty),
+                        prediction_id=None, counts_toward_cap=False,
+                        note=f"portfolio floor liquidation at total ${snapshot.total_value:.2f}",
+                        check_breaker=False,
+                    )
+                    actions.append({"action": "floor_liquidation", "product_id": product_id,
+                                    "fill": fill.__dict__, "realized_pnl": realized})
+                except (ExchangeError, guardrails.GuardrailViolation) as exc:
+                    actions.append({"action": "floor_liquidation_FAILED",
+                                    "product_id": product_id, "error": str(exc)})
+            self.store.set_trading_enabled(
+                False,
+                f"portfolio floor: total value ${snapshot.total_value:.2f} fell to or below "
+                f"${floor:.2f}; all positions liquidated to preserve remaining capital. "
+                "Review with the operator before re-enabling.",
+            )
+            return {"proposals_expired": expired, "actions": actions, "alerts": [],
+                    "trading_enabled": False,
+                    "disabled_reason": self.store.disabled_reason()}
+
         for product_id, (qty, price) in snapshot.positions.items():
             tracked_qty, cost = self.store.get_position(product_id)
             if tracked_qty <= 0 or cost <= 0:
@@ -612,6 +700,7 @@ class AgentCore:
         # Post-sweep breaker check: stop-losses may have pushed us past the daily limit.
         self._maybe_trip_breaker(now)
         return {"proposals_expired": expired, "actions": actions,
+                "alerts": self._shock_alerts(self._snapshot()),
                 "trading_enabled": self.store.trading_enabled(),
                 "disabled_reason": self.store.disabled_reason()}
 

@@ -39,6 +39,7 @@ def _normalize_whitelist(raw: str, quote_currency: str) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Config:
     trading_mode: str  # "paper" | "live"
+    exchange: str  # "coinbase" | "robinhood" (live mode execution venue)
     quote_currency: str
     product_whitelist: tuple[str, ...]
     max_trade_usd: float
@@ -48,7 +49,15 @@ class Config:
     data_dir: Path
     api_key_name: str | None
     api_private_key: str | None
+    robinhood_api_key: str | None
+    robinhood_private_key: str | None
     default_risk_mode: RiskMode
+    # Hard capital floor: if total portfolio value falls to this, everything is
+    # liquidated and trading halts. 0 disables the floor.
+    portfolio_floor_usd: float
+    # A held coin dropping this % in 1h (or 2x this in 24h) raises a
+    # REVIEW REQUIRED alert for the analyst on every maintenance scan.
+    shock_drop_pct: float
     # Two-phase execution: proposals must be confirmed by the analyst.
     require_confirmation: bool
     proposal_ttl_minutes: float
@@ -73,15 +82,29 @@ class Config:
         if quote_currency not in ("USD", "USDC"):
             raise ConfigError(f"QUOTE_CURRENCY must be USD or USDC, got {quote_currency!r}")
 
+        exchange = env.get("EXCHANGE", "coinbase").strip().lower()
+        if exchange not in ("coinbase", "robinhood"):
+            raise ConfigError(f"EXCHANGE must be 'coinbase' or 'robinhood', got {exchange!r}")
+        if exchange == "robinhood" and quote_currency != "USD":
+            raise ConfigError("Robinhood trades in USD buying power; set QUOTE_CURRENCY=USD")
+
         whitelist = _normalize_whitelist(env.get("PRODUCT_WHITELIST", DEFAULT_WHITELIST), quote_currency)
 
         api_key_name = env.get("COINBASE_API_KEY_NAME") or None
         api_private_key = env.get("COINBASE_API_PRIVATE_KEY") or None
-        if trading_mode == "live" and not (api_key_name and api_private_key):
-            raise ConfigError(
-                "TRADING_MODE=live requires COINBASE_API_KEY_NAME and COINBASE_API_PRIVATE_KEY. "
-                "Create the key with View + Trade permissions ONLY (never Transfer)."
-            )
+        robinhood_api_key = env.get("ROBINHOOD_API_KEY") or None
+        robinhood_private_key = env.get("ROBINHOOD_PRIVATE_KEY") or None
+        if trading_mode == "live":
+            if exchange == "coinbase" and not (api_key_name and api_private_key):
+                raise ConfigError(
+                    "TRADING_MODE=live with EXCHANGE=coinbase requires COINBASE_API_KEY_NAME and "
+                    "COINBASE_API_PRIVATE_KEY. Create the key with View + Trade ONLY (never Transfer)."
+                )
+            if exchange == "robinhood" and not (robinhood_api_key and robinhood_private_key):
+                raise ConfigError(
+                    "TRADING_MODE=live with EXCHANGE=robinhood requires ROBINHOOD_API_KEY and "
+                    "ROBINHOOD_PRIVATE_KEY (base64 Ed25519 seed) from the Robinhood API portal."
+                )
 
         mode_raw = env.get("DEFAULT_RISK_MODE", "conservative").strip().lower()
         try:
@@ -116,8 +139,13 @@ class Config:
 
         require_confirmation = _flag("REQUIRE_CONFIRMATION", "1")
 
+        portfolio_floor_usd = float(env.get("PORTFOLIO_FLOOR_USD", "0"))
+        if portfolio_floor_usd < 0:
+            raise ConfigError("PORTFOLIO_FLOOR_USD cannot be negative")
+
         return cls(
             trading_mode=trading_mode,
+            exchange=exchange,
             quote_currency=quote_currency,
             product_whitelist=whitelist,
             max_trade_usd=max_trade_usd,
@@ -127,7 +155,11 @@ class Config:
             data_dir=data_dir,
             api_key_name=api_key_name,
             api_private_key=api_private_key,
+            robinhood_api_key=robinhood_api_key,
+            robinhood_private_key=robinhood_private_key,
             default_risk_mode=default_risk_mode,
+            portfolio_floor_usd=portfolio_floor_usd,
+            shock_drop_pct=_positive_float("SHOCK_DROP_PCT", "8"),
             require_confirmation=require_confirmation,
             proposal_ttl_minutes=_positive_float("PROPOSAL_TTL_MINUTES", "15"),
             challenge_window_hours=_positive_float("CHALLENGE_WINDOW_HOURS", "24"),

@@ -309,3 +309,80 @@ def test_config_rejects_mixed_quotes():
 def test_config_expands_tilde(tmp_path, monkeypatch):
     cfg = make_config(AGENT_DATA_DIR="~/agent-data")
     assert "~" not in str(cfg.data_dir)
+
+
+def test_portfolio_floor_liquidates_and_halts(store, clock):
+    """Chase's rule: start ~$49, hard floor at $30 — everything sells, no override."""
+    config = make_config(
+        PAPER_STARTING_USD="49", PORTFOLIO_FLOOR_USD="30",
+        MIN_TRADE_USD="2", MAX_TRADE_USD="15", DEFAULT_RISK_MODE="aggressive",
+    )
+    core, exchange, prices = make_core(store, clock, config=config)
+    exchange.balances["USD"] = 49.0
+    core.submit_prediction("BTC-USD", "rise", 0.95, 24, THESIS, 5.0)
+    assert exchange.balances.get("BTC", 0.0) > 0
+
+    # simulate prior losses: cash down to $25, position down to ~$4 → total ~$29 ≤ $30
+    exchange.balances["USD"] = 25.0
+    prices["BTC-USD"] = 21_750.0
+    report = core.run_maintenance()
+    assert any(a["action"] == "floor_liquidation" for a in report["actions"])
+    assert report["trading_enabled"] is False
+    assert "portfolio floor" in report["disabled_reason"]
+    assert exchange.balances.get("BTC", 0.0) == 0.0
+
+    # re-enable requires a written review, then buys are still blocked below the floor
+    with pytest.raises(ValueError, match="reason"):
+        core.set_trading_enabled(True, "ok")
+    core.set_trading_enabled(True, "Reviewed with operator: floor did its job, restarting small.")
+    out = core.submit_prediction("ETH-USD", "rise", 0.95, 24, THESIS, 5.0)
+    assert out["executed"] is False
+    assert any("portfolio floor" in r for r in out["decision"]["reasons"])
+
+
+def test_shock_alert_on_sharp_drop(store, clock):
+    from coinbase_trading_agent.exchange import Candle
+
+    core, exchange, prices = make_core(store, clock)
+    core.submit_prediction("BTC-USD", "rise", 0.95, 24, THESIS, 5.0)
+
+    # 25 hourly candles flat at 50k; live price -9% vs last close: past the 8%
+    # shock threshold but inside the 10% stop-loss (avg cost ≈ 50,300 w/ fee),
+    # so the position survives the sweep and the alert fires
+    exchange.get_candles = lambda pid, g, n: [
+        Candle(start=i * 3600, open=50_000, high=50_500, low=49_500, close=50_000, volume=10)
+        for i in range(25)
+    ]
+    prices["BTC-USD"] = 45_500.0
+    report = core.run_maintenance()
+    alerts = report["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["type"] == "REVIEW_REQUIRED"
+    assert alerts[0]["product_id"] == "BTC-USD"
+    assert "Re-research" in alerts[0]["instruction"]
+
+
+def test_no_shock_alert_when_calm(store, clock):
+    from coinbase_trading_agent.exchange import Candle
+
+    core, exchange, prices = make_core(store, clock)
+    core.submit_prediction("BTC-USD", "rise", 0.95, 24, THESIS, 5.0)
+    exchange.get_candles = lambda pid, g, n: [
+        Candle(start=i * 3600, open=50_000, high=50_500, low=49_500, close=50_000, volume=10)
+        for i in range(25)
+    ]
+    prices["BTC-USD"] = 49_500.0  # -1%: no alert
+    assert core.run_maintenance()["alerts"] == []
+
+
+def test_config_exchange_validation():
+    from coinbase_trading_agent.config import ConfigError
+
+    cfg = make_config(EXCHANGE="robinhood")
+    assert cfg.exchange == "robinhood"
+    with pytest.raises(ConfigError, match="EXCHANGE"):
+        make_config(EXCHANGE="kraken")
+    with pytest.raises(ConfigError, match="USD"):
+        make_config(EXCHANGE="robinhood", QUOTE_CURRENCY="USDC")
+    with pytest.raises(ConfigError, match="ROBINHOOD_API_KEY"):
+        make_config(EXCHANGE="robinhood", TRADING_MODE="live")

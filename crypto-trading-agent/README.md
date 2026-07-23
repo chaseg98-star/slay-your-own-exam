@@ -1,7 +1,7 @@
-# Coinbase Trading Agent (MCP)
+# Crypto Trading Agent (MCP) — Coinbase or Robinhood
 
 An MCP server that turns a Claude analyst's crypto research into **risk-managed
-spot trades on your Coinbase account** — and nothing else. The analyst
+spot trades on your Coinbase or Robinhood account** — and nothing else. The analyst
 researches news, social sentiment, on-chain data, and markets; this agent takes
 its rise/fall predictions, cross-checks them against its own technical read of
 raw OHLCV data, sizes them under the active risk mode, and executes only after
@@ -91,7 +91,7 @@ pip install -e .
 Paper mode simulates fills against real Coinbase market prices with a 0.6%
 taker fee. Run the agent this way until you trust it.
 
-### 3. Create a locked-down Coinbase API key (live mode)
+### 3a. Live on Coinbase (EXCHANGE=coinbase)
 
 1. In Coinbase, create a **dedicated portfolio** and move only the money you
    are prepared to lose into it. The agent can only touch that portfolio.
@@ -100,6 +100,49 @@ taker fee. Run the agent this way until you trust it.
    permissions only. Do not grant Transfer.** The agent refuses to start if the
    key can transfer.
 3. Put the key in your environment (see `.env.example`).
+
+### 3b. Live on Robinhood (EXCHANGE=robinhood)
+
+Uses the official [Robinhood Crypto Trading API](https://docs.robinhood.com)
+(crypto only — Robinhood has no public stock API).
+
+1. In the Robinhood app/web: **Account → Settings → Crypto → API trading**.
+   Generate an Ed25519 keypair (their portal walks you through it), register
+   the **public** key, and save the **private key seed (base64)** plus the API
+   key they issue.
+2. Set `EXCHANGE=robinhood`, `ROBINHOOD_API_KEY`, and `ROBINHOOD_PRIVATE_KEY`
+   in the env (see `.env.example`).
+3. Two structural differences from Coinbase to know:
+   - The Robinhood Crypto API has **no withdrawal/transfer/deposit endpoints at
+     all**, so trade-only is guaranteed by the API surface itself.
+   - Robinhood has **no sub-portfolios**: the key sees your entire crypto
+     buying power. The agent's caps (`MAX_TRADE_USD`, exposure limits) and
+     `PORTFOLIO_FLOOR_USD` are the sizing limits, so set them deliberately.
+   - OHLCV candles for the technical engine come from Coinbase's free public
+     market data (Robinhood serves none); execution stays on Robinhood.
+
+### 3c. Standing safety rails (any venue)
+
+- **Portfolio floor** (`PORTFOLIO_FLOOR_USD`): if total account value ever
+  falls to the floor, the agent liquidates every position immediately and
+  halts. There is deliberately no "it might bounce back" override — a crash
+  that will recover is indistinguishable from one that won't while it's
+  happening. If the analyst still believes in the coin afterward, it re-enters
+  through a fresh, risk-checked prediction.
+- **Shock review alerts** (`SHOCK_DROP_PCT`, default 8): any held coin dropping
+  ≥8% in an hour (or ≥16% in a day) raises a `REVIEW_REQUIRED` alert on the
+  next scan, instructing the analyst to re-research the thesis immediately and
+  close the position if it no longer holds.
+- **The 30-minute scan**: `run_maintenance` is the heartbeat — floor, stops,
+  max-hold, shock alerts. Run it two ways at once:
+  1. The analyst calls it at the start of every session and every ~30 minutes
+     while monitoring (see `analyst-prompt.md`).
+  2. A cron/launchd job runs it headlessly so the rails hold with no Claude
+     session open:
+     ```
+     */30 * * * * /path/to/.venv/bin/coinbase-trading-agent --monitor >> ~/trading-monitor.log 2>&1
+     ```
+     (same env vars as the server; it prints the sweep report as JSON).
 
 ### 4. Connect Claude
 

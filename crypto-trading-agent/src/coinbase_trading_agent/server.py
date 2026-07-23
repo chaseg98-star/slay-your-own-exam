@@ -42,7 +42,11 @@ def _get_core() -> AgentCore:
     if _core is None:
         config = Config.from_env()
         store = Store(config.data_dir / f"agent-{config.trading_mode}.sqlite3")
-        if config.trading_mode == "live":
+        if config.trading_mode == "live" and config.exchange == "robinhood":
+            from .robinhood import RobinhoodExchange
+
+            exchange = RobinhoodExchange(config.robinhood_api_key, config.robinhood_private_key)
+        elif config.trading_mode == "live":
             from .exchange import CoinbaseExchange
 
             exchange = CoinbaseExchange(config.api_key_name, config.api_private_key)
@@ -138,9 +142,11 @@ def challenge_trade(order_id: str, reasoning: str) -> dict:
 
 @mcp.tool()
 def run_maintenance() -> dict:
-    """Stop-loss sweep and housekeeping: exits any position past the mode's stop-loss,
-    expires stale proposals, re-checks the daily-loss circuit breaker. Call this at
-    the start of every session and periodically while monitoring."""
+    """Full safety sweep — call at the start of EVERY session and at least every 30
+    minutes while monitoring. Enforces the portfolio floor (liquidate-and-halt),
+    stop-losses, and the 28-day max hold; expires stale proposals; re-checks the
+    daily-loss breaker; and returns REVIEW_REQUIRED alerts for any held coin that
+    is dropping sharply — those demand an immediate re-research of the thesis."""
     return _get_core().run_maintenance()
 
 
@@ -175,10 +181,27 @@ def get_predictions(limit: int = 20) -> list[dict]:
 
 def main() -> None:
     try:
-        _get_core()
+        core = _get_core()
     except Exception as exc:
         print(f"coinbase-trading-agent failed to start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
+
+    if "--monitor" in sys.argv:
+        # Headless safety sweep for cron/launchd: enforces the portfolio floor,
+        # stop-losses, and max-hold exits, and prints shock alerts — no LLM
+        # required, so the rails hold even when no Claude session is open.
+        import json
+
+        report = core.run_maintenance()
+        print(json.dumps(report, indent=2, default=str))
+        if report.get("alerts"):
+            print(
+                f"\n{len(report['alerts'])} REVIEW_REQUIRED alert(s): start an analyst "
+                "session to re-research these positions.",
+                file=sys.stderr,
+            )
+        return
+
     mcp.run()
 
 

@@ -298,6 +298,43 @@ FALLBACK_PRICES = {
 }
 
 
+def fetch_public_candles(product_id: str, granularity: str, limit: int) -> list[Candle]:
+    """OHLCV candles from Coinbase's public (unauthenticated) market data.
+
+    Also used by exchanges that don't serve candle history (e.g. Robinhood):
+    prices for liquid majors are essentially identical across venues, so the
+    technical engine reads Coinbase public data regardless of where orders go.
+    Returns an empty list when offline.
+    """
+    if granularity not in GRANULARITIES:
+        raise ExchangeError(f"granularity must be one of {GRANULARITIES}")
+    limit = max(1, min(int(limit), 300))
+    end = int(time.time())
+    start = end - _GRANULARITY_SECONDS[granularity] * limit
+    url = (
+        f"{PUBLIC_MARKET_BASE}/products/{product_id}/candles"
+        f"?start={start}&end={end}&granularity={granularity}"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return []
+    candles = [
+        Candle(
+            start=int(c.get("start", 0)),
+            open=float(c.get("open", 0)),
+            high=float(c.get("high", 0)),
+            low=float(c.get("low", 0)),
+            close=float(c.get("close", 0)),
+            volume=float(c.get("volume", 0)),
+        )
+        for c in data.get("candles", [])
+    ]
+    candles.sort(key=lambda c: c.start)
+    return candles
+
+
 def public_price_source(product_id: str) -> float:
     """Spot price from Coinbase's public (unauthenticated) market-data endpoint."""
     url = f"{PUBLIC_MARKET_BASE}/products/{product_id}"
@@ -350,33 +387,7 @@ class PaperExchange:
 
     def get_candles(self, product_id: str, granularity: str, limit: int) -> list[Candle]:
         """Real candles from the public endpoint; empty list when offline."""
-        if granularity not in GRANULARITIES:
-            raise ExchangeError(f"granularity must be one of {GRANULARITIES}")
-        limit = max(1, min(int(limit), 300))
-        end = int(time.time())
-        start = end - _GRANULARITY_SECONDS[granularity] * limit
-        url = (
-            f"{PUBLIC_MARKET_BASE}/products/{product_id}/candles"
-            f"?start={start}&end={end}&granularity={granularity}"
-        )
-        try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read())
-        except Exception:
-            return []
-        candles = [
-            Candle(
-                start=int(c.get("start", 0)),
-                open=float(c.get("open", 0)),
-                high=float(c.get("high", 0)),
-                low=float(c.get("low", 0)),
-                close=float(c.get("close", 0)),
-                volume=float(c.get("volume", 0)),
-            )
-            for c in data.get("candles", [])
-        ]
-        candles.sort(key=lambda c: c.start)
-        return candles
+        return fetch_public_candles(product_id, granularity, limit)
 
     def market_buy(self, product_id: str, quote_size: float) -> Fill:
         quote_size = float(quantize_down(quote_size, "0.01"))
