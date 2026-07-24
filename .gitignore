@@ -2,3 +2,7 @@ files.zip
 slay-your-own-exam.zip
 .claude/
 Normandy Dr copy.m4a
+
+# voice-exam connector (Cloudflare Worker) local artifacts
+connector/node_modules/
+connector/.wrangler/

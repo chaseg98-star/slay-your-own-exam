@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdnjs.cloudflare.com https://api.anthropic.com https://*.googleapis.com wss://*.firebaseio.com; media-src 'self'; worker-src blob: https://cdnjs.cloudflare.com; child-src blob:; frame-src https://slayyourexam.firebaseapp.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdnjs.cloudflare.com https://api.anthropic.com https://*.googleapis.com https://*.workers.dev wss://*.firebaseio.com; media-src 'self'; worker-src blob: https://cdnjs.cloudflare.com; child-src blob:; frame-src https://slayyourexam.firebaseapp.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Slay Your Own Exam — practice from your own PDFs</title>
 <meta name="description" content="Turn your own question-bank PDF into a realistic, UWorld-style board exam — verbatim questions, a 90-second timer, highlighting, full lab values, and AI tutoring on what you missed.">
@@ -585,6 +585,7 @@ h1,h2,h3,.h1,.brand,.hero-title,.sectit{letter-spacing:-.015em}
       </button>
       <div class="spacer"></div>
       <button class="btn sm hidden" id="submitBtn">Submit</button>
+      <button class="btn ghost sm hidden" id="voiceExamBtn" title="Take this test hands-free by voice on your phone with Claude">🎙 Voice</button>
       <button class="btn ghost sm" id="exportTestBtn2" title="Save this test and your progress to a file">⤓ Save file</button>
       <button class="btn ghost sm" id="suspendBtn" title="Pause this test and return to the main menu — everything is saved">Suspend</button>
       <button class="btn sm end" id="endBtn">End test</button>
@@ -826,6 +827,16 @@ $('#themeBtn').onclick=()=>{const i=THEMES.indexOf(settings.theme||'light');setT
    then paste your project's config below (Project settings > General > Your apps > SDK setup).
    See README.md for the full walkthrough, including the Firestore security rules to paste in. */
 const ADMIN_EMAIL='chase.g98@icloud.com'; // the account with this email gets the Admin view of every saved test
+/* ---------- voice-exam connector (optional) ----------
+   Take a test hands-free by voice on your phone: Claude reads the questions,
+   describes figures, and records your spoken answers — but never sees the
+   answer key, so it can quiz you without giving anything away. When you finish,
+   the answers sync back here and grade like a normal test.
+   Deploy the tiny Worker in /connector (see connector/README.md), then paste its
+   URL below. It must be an https://*.workers.dev origin to satisfy the CSP above
+   (if you put it on a custom domain, add that origin to connect-src too).
+   Leave '' to hide the Voice button. */
+const CONNECTOR_URL='';
 const firebaseConfig={
   apiKey:"AIzaSyBAxXqJciU45p1p1rohAhKBiZEIZLvoSEs",
   authDomain:"slayyourexam.firebaseapp.com",
@@ -2933,6 +2944,119 @@ $('#exportTestBtn')&&($('#exportTestBtn').onclick=exportTest);
 $('#exportTestBtn2')&&($('#exportTestBtn2').onclick=exportTest);
 $('#importBtn')&&($('#importBtn').onclick=()=>$('#importFile').click());
 $('#importFile')&&($('#importFile').onchange=e=>{if(e.target.files[0])importTest(e.target.files[0]);e.target.value='';});
+
+/* =========================================================================
+   VOICE EXAM (phone) — pair this test to Claude's voice connector so it can
+   read you the questions hands-free (great for driving) and record your spoken
+   answers. The answer KEY (correct option + explanation) is never sent, so
+   Claude can quiz you but can't give anything away. When you finish, the
+   answers sync back here and grade exactly like a normal test.
+   Setup: deploy /connector and set CONNECTOR_URL near firebaseConfig.
+   ========================================================================= */
+const VOICE_LS='sye_voice';
+function voiceConfigured(){return typeof CONNECTOR_URL==='string'&&/^https:\/\/\S+/.test(CONNECTOR_URL);}
+function voiceBase(){return CONNECTOR_URL.replace(/\/+$/,'');}
+function loadVoice(){try{return JSON.parse(localStorage.getItem(VOICE_LS)||'null');}catch(e){return null;}}
+function saveVoice(v){try{v?localStorage.setItem(VOICE_LS,JSON.stringify(v)):localStorage.removeItem(VOICE_LS);}catch(e){}}
+let _voicePoll=null;
+function stopVoicePolling(){if(_voicePoll){clearInterval(_voicePoll);_voicePoll=null;}}
+
+// Serialize the current test WITHOUT the answer key — stem, options and figures only.
+function buildVoicePayload(){
+  const order=(state.order&&state.order.length)?state.order:state.questions.map((_,i)=>i);
+  const questions=order.map(i=>{
+    const q=state.questions[i];
+    return {id:q.id, number:q.number||'', stem:q.stem,
+      options:(q.options||[]).map(o=>({letter:o.letter,text:o.text})),
+      images:(q.images||[]).filter(okImg)};
+  });
+  return {title:state.pdfName||'Practice exam', questions};
+}
+
+async function startVoiceExam(){
+  if(!voiceConfigured()){toast('Voice connector isn’t set up yet — see connector/README.md');return;}
+  if(!state.questions.length){toast('Load or start a test first');return;}
+  bankTimer();
+  // Resume an existing code for THIS test (survives closing the tab), else make a new one.
+  const saved=loadVoice();
+  if(saved&&saved.liveId&&saved.liveId===state.liveId&&saved.code){
+    try{
+      const r=await fetch(voiceBase()+'/pull/'+encodeURIComponent(saved.code));
+      if(r.ok){const d=await r.json();showVoiceModal(saved.code,d.total||saved.total);startVoicePolling(saved.code);return;}
+    }catch(e){/* fall through to a fresh session */}
+  }
+  openModal('🎙 Voice exam','<p class="note">Packaging your test…</p>');
+  try{
+    const r=await fetch(voiceBase()+'/push',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(buildVoicePayload())});
+    if(!r.ok)throw new Error('connector returned '+r.status);
+    const d=await r.json();
+    saveVoice({code:d.code,total:d.total,liveId:state.liveId});
+    showVoiceModal(d.code,d.total);
+    startVoicePolling(d.code);
+  }catch(e){
+    openModal('🎙 Voice exam','<p class="note" style="color:var(--bad)">Couldn’t reach the connector: '+esc(e.message)+'.</p><p class="note">Check CONNECTOR_URL and that the Worker is deployed (see connector/README.md).</p>');
+  }
+}
+
+function showVoiceModal(code,total){
+  openModal('🎙 Voice exam on your phone',
+    '<div style="text-align:center">'+
+    '<p class="note">On your phone, open <b>Claude</b> (voice mode) with the connector added, and say:</p>'+
+    '<div style="font-size:26px;font-weight:800;letter-spacing:3px;margin:10px 0">start exam '+esc(code)+'</div>'+
+    '<p class="note">Claude reads you all '+esc(total)+' question'+(total===1?'':'s')+', describes any figures, and records your answers. It <b>can’t</b> tell you which option is correct — this test grades right here when you’re done.</p>'+
+    '<div class="status" id="voiceStatus" style="display:block;margin:12px 0">Waiting for your answers… 0 of '+esc(total)+'</div>'+
+    '<div class="row" style="justify-content:center;gap:10px;margin-top:6px">'+
+      '<button class="btn" id="voiceGrade">Apply answers &amp; grade</button>'+
+      '<button class="btn ghost" id="voiceClose">Close</button>'+
+    '</div>'+
+    '<p class="note" style="margin-top:10px;font-size:12px;opacity:.8">Your code stays valid for 24 hours — reopen this from the 🎙 Voice button anytime to pick your answers back up.</p>'+
+    '</div>');
+  $('#voiceGrade').onclick=()=>applyVoiceThenGrade(code);
+  $('#voiceClose').onclick=()=>{stopVoicePolling();closeModal();};
+  _modalCleanup=stopVoicePolling;
+}
+
+function startVoicePolling(code){
+  stopVoicePolling();
+  _voicePoll=setInterval(async()=>{
+    let d=null;try{const r=await fetch(voiceBase()+'/pull/'+encodeURIComponent(code));if(r.ok)d=await r.json();}catch(e){}
+    if(!d)return;
+    const applied=applyVoiceAnswers(d.answers||{});
+    if(applied)saveLiveState();
+    const st=$('#voiceStatus');
+    if(st)st.textContent=(d.finished?'✓ Finished — ':'In progress — ')+d.answered+' of '+d.total+' answered'+(d.finished?'. Tap “Apply answers & grade”.':'');
+    if(d.finished)stopVoicePolling();
+  },4000);
+}
+
+// Copy spoken answers into the aligned attempts. Matches by stable question id,
+// so order never matters. correctSelected is computed against the LOCAL key.
+function applyVoiceAnswers(answers){
+  let n=0;
+  state.questions.forEach((q,i)=>{
+    const a=state.attempts[i];if(!a)return;
+    const rec=answers[q.id];if(!rec)return;
+    if(rec.selected&&rec.selected!=='skip'&&/^[A-E]$/.test(rec.selected)){
+      if(a.selected!==rec.selected){a.answerChanges.push({from:a.selected,to:rec.selected,atMs:Math.round(a.activeMs),via:'voice'});a.selected=rec.selected;n++;}
+      a.correctSelected=q.correct?(a.selected===q.correct):null;
+    }
+    if(rec.flagged!=null)a.flagged=!!rec.flagged;
+  });
+  return n;
+}
+
+async function applyVoiceThenGrade(code){
+  stopVoicePolling();
+  let d=null;try{const r=await fetch(voiceBase()+'/pull/'+encodeURIComponent(code));if(r.ok)d=await r.json();}catch(e){}
+  if(d)applyVoiceAnswers(d.answers||{});
+  saveVoice(null);
+  closeModal();
+  if(state.reviewMode){toast('Answers applied');return;}
+  endTest(); // finalizes correctness, saves to History, and shows graded Results
+}
+
+$('#voiceExamBtn')&&($('#voiceExamBtn').onclick=startVoiceExam);
+if(voiceConfigured())$('#voiceExamBtn')&&$('#voiceExamBtn').classList.remove('hidden');
 
 /* =========================================================================
    6. ANALYZE WITH CLAUDE
