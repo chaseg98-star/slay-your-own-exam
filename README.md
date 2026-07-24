@@ -16,6 +16,7 @@ Everything runs **in your browser**. Your PDFs are never uploaded anywhere. By d
 - **Focus Lock** — a web version of the FocusLock Mac app. Arm it for a test and leaving the tab (or clicking off the browser) sounds a looping voice alarm (minimum 5-second blast). The only ways out: say **"I am done with my test"** out loud (speech recognition), or a typed emergency fallback. Limits a web page can't escape: it cannot raise your system volume, and closing the tab kills any alarm a website can make.
 - **Clean lab panels** — lab values are pulled out of the vignette into their own "Laboratory values" section between the story and the question, instead of being jumbled through the stem.
 - **AI tutoring** — after a block, get targeted, high-yield feedback based on your answers, timing, what you highlighted, and what you crossed out (uses your own Anthropic API key, entered in Settings).
+- **Voice exam (hands-free)** — pair a test to Claude's voice chat on your phone and take it by ear: Claude reads the questions, reads the labs, **describes the figures**, and records your **spoken** answers — ideal for reviewing while driving. It never receives the answer key, so it can quiz you but can't give anything away; when you finish, your answers sync back and grade like a normal test. Optional; see [`connector/`](connector/).
 - **Accounts (optional)** — sign up / log in to sync every saved test, and every in-progress answer, highlight, and cross-out, to your account in real time so you can pick up on another device. One designated admin account can see every account's saved tests. Off by default; see [Set up accounts](#set-up-accounts-optional) below.
 
 ## Run it locally
@@ -28,6 +29,16 @@ Just open `index.html` in any modern browser (Chrome, Edge, Safari, Firefox). No
 
 1. Get an Anthropic API key from <https://console.anthropic.com>.
 2. Open **Settings** in the app and paste your key. It is stored only in your browser's local storage.
+
+## Take a test by voice (optional)
+
+Deploy the small connector in [`connector/`](connector/) and you can take any
+test **hands-free** through Claude's voice chat on your phone — Claude reads you
+the questions, the labs, and the figures, and records your spoken answers,
+without ever seeing the answer key. It's a real [MCP](https://modelcontextprotocol.io)
+connector you add once in Claude's settings; the whole backend is a single
+free Cloudflare Worker. Full setup (about five minutes) is in
+[`connector/README.md`](connector/README.md).
 
 ## Set up accounts (optional)
 

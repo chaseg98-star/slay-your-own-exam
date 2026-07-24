@@ -1,0 +1,26 @@
+# Cloudflare Workers config for the voice-exam connector.
+#
+# One-time setup (see connector/README.md for the full walkthrough):
+#   1. npm install
+#   2. npx wrangler login
+#   3. npx wrangler kv namespace create EXAMS
+#      -> paste the printed id below as kv_namespaces.id
+#   4. npx wrangler deploy
+#      -> note the https://<name>.<subdomain>.workers.dev URL it prints
+#
+# Then add "<that-url>/mcp" as a custom connector in Claude, and set
+# CONNECTOR_URL in index.html to "<that-url>".
+
+name = "slay-your-own-exam-connector"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# Bind the KV namespace created in step 3. Replace the placeholder id.
+[[kv_namespaces]]
+binding = "EXAMS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Optional: lock browser calls (/push, /pull) to just your site's origin.
+# Leave unset to allow any origin (fine for personal use).
+# [vars]
+# ALLOWED_ORIGIN = "https://<your-username>.github.io"

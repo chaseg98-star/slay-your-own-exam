@@ -1,0 +1,16 @@
+{
+  "name": "slay-your-own-exam-connector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Voice-exam MCP connector for Slay Your Own Exam — lets Claude read your practice exam aloud, hands-free, without ever seeing the answer key.",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "kv:create": "wrangler kv namespace create EXAMS"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
